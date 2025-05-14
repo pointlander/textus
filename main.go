@@ -7,6 +7,8 @@ package main
 import (
 	"compress/bzip2"
 	"embed"
+	"flag"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -15,7 +17,14 @@ import (
 //go:embed books/*
 var Data embed.FS
 
+var (
+	// FlagPrompt prompt for the model
+	FlagPrompt = flag.String("prompt", "", "prompt for the model")
+)
+
 func main() {
+	flag.Parse()
+
 	file, err := Data.Open("books/100.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
@@ -25,6 +34,49 @@ func main() {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		panic(err)
+	}
+
+	if *FlagPrompt != "" {
+		m := NewFiltered()
+		for _, v := range []byte(*FlagPrompt) {
+			m.Add(v)
+		}
+		input, err := os.Open("db.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer input.Close()
+		buffer, vector := make([]byte, 1025), make([]float32, 256)
+		for i := 0; i < 33; i++ {
+			current := m.Mix()
+			max, symbol := float32(0.0), byte(0)
+			for range data {
+				n, err := input.Read(buffer)
+				if err == io.EOF {
+					break
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("not all bytes read")
+				}
+				for j := range vector {
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer[j*4+3-k])
+					}
+					vector[j] = math.Float32frombits(value)
+				}
+				if a := CS(vector, current[:]); a > max {
+					max, symbol = a, buffer[1024]
+				}
+			}
+			fmt.Printf("%c\n", symbol)
+			m.Add(symbol)
+			input.Seek(0, 0)
+		}
+		return
 	}
 
 	db, err := os.Create("db.bin")
