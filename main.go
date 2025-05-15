@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/bits"
 	"os"
 )
 
@@ -32,39 +33,91 @@ var (
 func main() {
 	flag.Parse()
 
-	file, err := Data.Open("books/100.txt.utf-8.bz2")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-	reader := bzip2.NewReader(file)
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		panic(err)
-	}
-
 	if *FlagPrompt != "" {
 		m := NewFiltered()
 		for _, v := range []byte(*FlagPrompt) {
 			m.Add(v)
 		}
-		input, err := os.Open("db.bin")
-		if err != nil {
-			panic(err)
+		input := make([]*os.File, 5)
+		for i := range input {
+			var err error
+			input[i], err = os.Open(fmt.Sprintf("db.bin.%d", i))
+			if err != nil {
+				panic(err)
+			}
+			defer input[i].Close()
 		}
-		defer input.Close()
-		info, err := input.Stat()
-		if err != nil {
-			panic(err)
+		items := make([]int64, 5)
+		for i := range items {
+			info, err := input[i].Stat()
+			if err != nil {
+				panic(err)
+			}
+			length := info.Size()
+			if i == 0 {
+				items[i] = length / ItemSize
+			} else {
+				items[i] = length / VectorSize
+			}
 		}
-		length := info.Size()
-		items := length / ItemSize
-		buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-		for i := 0; i < 33; i++ {
+		buffer, vectorBuffer, vector := [ItemSize]byte{}, [VectorSize]byte{}, [InputSize]float32{}
+		for i := 0; i < 128; i++ {
 			current := m.Mix()
+			max, index := float32(0.0), 0
+			for j := range items[4] {
+				n, err := input[4].Read(vectorBuffer[:])
+				if err == io.EOF {
+					break
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(vectorBuffer) {
+					panic("not all bytes read")
+				}
+				for j := range vector {
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(vectorBuffer[j*4+3-k])
+					}
+					vector[j] = math.Float32frombits(value)
+				}
+				if a := CS(vector[:], current[:]); a > max {
+					max, index = a, int(j)
+				}
+				input[4].Seek(0, 0)
+			}
+			for j := 3; j > 0; j-- {
+				input[j].Seek(int64(index*8), 0)
+				max, index = float32(0.0), 0
+				for k := index * 8; k < (index+1)*8; k++ {
+					n, err := input[j].Read(vectorBuffer[:])
+					if err == io.EOF {
+						break
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(vectorBuffer) {
+						panic("not all bytes read")
+					}
+					for j := range vector {
+						value := uint32(0)
+						for k := 0; k < 4; k++ {
+							value <<= 8
+							value |= uint32(vectorBuffer[j*4+3-k])
+						}
+						vector[j] = math.Float32frombits(value)
+					}
+					if a := CS(vector[:], current[:]); a > max {
+						max, index = a, int(k)
+					}
+					input[j].Seek(0, 0)
+				}
+			}
 			max, symbol := float32(0.0), byte(0)
-			for range items {
-				n, err := input.Read(buffer[:])
+			input[0].Seek(int64(index*8), 0)
+			for k := index * 8; k < (index+1)*8; k++ {
+				n, err := input[0].Read(buffer[:])
 				if err == io.EOF {
 					break
 				} else if err != nil {
@@ -87,17 +140,36 @@ func main() {
 			}
 			fmt.Printf("%c", symbol)
 			m.Add(symbol)
-			input.Seek(0, 0)
 		}
 		fmt.Println()
 		return
 	}
 
-	db, err := os.Create("db.bin")
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	length := bits.Len64(uint64(len(data)))
+	length /= 4
+	db := make([]*os.File, length)
+	vectors := make([][InputSize]float32, length)
+	eight := make([]int, length)
+	fmt.Println(length)
+	for i := range db {
+		var err error
+		db[i], err = os.Create(fmt.Sprintf("db.bin.%d", i))
+		if err != nil {
+			panic(err)
+		}
+		defer db[i].Close()
+	}
 
 	m := NewFiltered()
 	m.Add(0)
@@ -109,7 +181,7 @@ func main() {
 			for i := range buffer32 {
 				buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
 			}
-			n, err := db.Write(buffer32)
+			n, err := db[0].Write(buffer32)
 			if err != nil {
 				panic(err)
 			}
@@ -117,8 +189,35 @@ func main() {
 				panic("4 bytes should be been written")
 			}
 		}
+
+		for i, v := range vector {
+			vectors[0][i] += v
+		}
+		eight[0]++
+		index := 1
+		for index < length && eight[index-1]%8 == 0 && eight[index-1] != 0 {
+			for j, v := range vectors[index-1] {
+				bits := math.Float32bits(v)
+				for i := range buffer32 {
+					buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+				}
+				n, err := db[index].Write(buffer32)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer32) {
+					panic("4 bytes should be been written")
+				}
+				vectors[index][j] += v
+				vectors[index-1][j] = 0.0
+			}
+			eight[index]++
+			eight[index-1] = 0
+			index++
+		}
+
 		buffer8[0] = v
-		n, err := db.Write(buffer8)
+		n, err := db[0].Write(buffer8)
 		if err != nil {
 			panic(err)
 		}
