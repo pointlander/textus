@@ -14,6 +14,13 @@ import (
 	"os"
 )
 
+const (
+	// VectorSize is the size of a vector
+	VectorSize = InputSize * 4
+	// ItemSize is the size of a row
+	ItemSize = VectorSize + 1
+)
+
 //go:embed books/*
 var Data embed.FS
 
@@ -46,12 +53,18 @@ func main() {
 			panic(err)
 		}
 		defer input.Close()
-		buffer, vector := make([]byte, 1025), make([]float32, 256)
+		info, err := input.Stat()
+		if err != nil {
+			panic(err)
+		}
+		length := info.Size()
+		items := length / ItemSize
+		buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
 		for i := 0; i < 33; i++ {
 			current := m.Mix()
 			max, symbol := float32(0.0), byte(0)
-			for range data {
-				n, err := input.Read(buffer)
+			for range items {
+				n, err := input.Read(buffer[:])
 				if err == io.EOF {
 					break
 				} else if err != nil {
@@ -68,14 +81,15 @@ func main() {
 					}
 					vector[j] = math.Float32frombits(value)
 				}
-				if a := CS(vector, current[:]); a > max {
-					max, symbol = a, buffer[1024]
+				if a := CS(vector[:], current[:]); a > max {
+					max, symbol = a, buffer[ItemSize-1]
 				}
 			}
-			fmt.Printf("%c\n", symbol)
+			fmt.Printf("%c", symbol)
 			m.Add(symbol)
 			input.Seek(0, 0)
 		}
+		fmt.Println()
 		return
 	}
 
