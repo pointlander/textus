@@ -85,10 +85,10 @@ func main() {
 				if a := CS(vector[:], current[:]); a > max {
 					max, index = a, int(j)
 				}
-				input[4].Seek(0, 0)
 			}
+			input[4].Seek(0, 0)
 			for j := 3; j > 0; j-- {
-				input[j].Seek(int64(index*8), 0)
+				input[j].Seek(int64(index*8*len(vectorBuffer)), 0)
 				max, index = float32(0.0), 0
 				for k := index * 8; k < (index+1)*8; k++ {
 					n, err := input[j].Read(vectorBuffer[:])
@@ -98,7 +98,7 @@ func main() {
 						panic(err)
 					}
 					if n != len(vectorBuffer) {
-						panic("not all bytes read")
+						panic(fmt.Errorf("not all bytes read: %d", n))
 					}
 					for j := range vector {
 						value := uint32(0)
@@ -111,11 +111,10 @@ func main() {
 					if a := CS(vector[:], current[:]); a > max {
 						max, index = a, int(k)
 					}
-					input[j].Seek(0, 0)
 				}
 			}
 			max, symbol := float32(0.0), byte(0)
-			input[0].Seek(int64(index*8), 0)
+			input[0].Seek(int64(index*8*len(buffer)), 0)
 			for k := index * 8; k < (index+1)*8; k++ {
 				n, err := input[0].Read(buffer[:])
 				if err == io.EOF {
