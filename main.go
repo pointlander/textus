@@ -21,6 +21,8 @@ const (
 	VectorSize = InputSize * 4
 	// ItemSize is the size of a row
 	ItemSize = VectorSize + 1
+	// Samples is the number of samples
+	Samples = 8 * 1024
 )
 
 //go:embed books/*
@@ -259,7 +261,7 @@ func main() {
 		var search func(begin, end int) byte
 		search = func(begin, end int) byte {
 			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-			if end-begin <= 256 {
+			if end-begin <= Samples {
 				input.Seek(int64(begin*len(buffer)), 0)
 				max, symbol := float32(0.0), byte(0)
 				for range end - begin {
@@ -287,7 +289,7 @@ func main() {
 				return symbol
 			}
 			a, b := float32(0.0), float32(0.0)
-			for range 256 {
+			for range Samples {
 				index := rng.Intn(end-begin)/2 + begin
 				input.Seek(int64(index*len(buffer)), 0)
 				n, err := input.Read(buffer[:])
@@ -309,7 +311,7 @@ func main() {
 				}
 				a += CS(vector[:], current[:])
 			}
-			for range 256 {
+			for range Samples {
 				index := end - rng.Intn(end-begin)/2
 				input.Seek(int64(index*len(buffer)), 0)
 				n, err := input.Read(buffer[:])
