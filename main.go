@@ -259,18 +259,32 @@ func main() {
 		var search func(begin, end int) byte
 		search = func(begin, end int) byte {
 			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-			if begin == end {
+			if end-begin <= 256 {
 				input.Seek(int64(begin*len(buffer)), 0)
-				n, err := input.Read(buffer[:])
-				if err == io.EOF {
-					panic("symbol not found")
-				} else if err != nil {
-					panic(err)
+				max, symbol := float32(0.0), byte(0)
+				for range end - begin {
+					n, err := input.Read(buffer[:])
+					if err == io.EOF {
+						panic("symbol not found")
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer) {
+						panic("not all bytes read")
+					}
+					for j := range vector {
+						value := uint32(0)
+						for k := 0; k < 4; k++ {
+							value <<= 8
+							value |= uint32(buffer[j*4+3-k])
+						}
+						vector[j] = math.Float32frombits(value)
+					}
+					if a := CS(vector[:], current[:]); a > max {
+						max, symbol = a, buffer[len(buffer)-1]
+					}
 				}
-				if n != len(buffer) {
-					panic("not all bytes read")
-				}
-				return buffer[len(buffer)-1]
+				return symbol
 			}
 			a, b := float32(0.0), float32(0.0)
 			for range 256 {
@@ -322,7 +336,12 @@ func main() {
 			}
 			return search(begin+(end-begin)/2, end)
 		}
-		fmt.Printf("%c\n", search(0, int(length)))
+		for range 256 {
+			symbol := search(0, int(length))
+			fmt.Printf("%c", symbol)
+			m.Add(symbol)
+			current = m.Mix()
+		}
 		return
 	}
 
