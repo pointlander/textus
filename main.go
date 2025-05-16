@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"math/rand"
 	"os"
 )
 
@@ -232,6 +233,96 @@ func main() {
 
 	if *FlagMach1 {
 		Mach1()
+		return
+	}
+
+	if *FlagPrompt != "" {
+		m := NewFiltered()
+		for _, v := range []byte(*FlagPrompt) {
+			m.Add(v)
+		}
+
+		input, err := os.Open("db.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer input.Close()
+
+		info, err := input.Stat()
+		if err != nil {
+			panic(err)
+		}
+		length := info.Size() / ItemSize
+
+		rng := rand.New(rand.NewSource(1))
+		current := m.Mix()
+		var search func(begin, end int) byte
+		search = func(begin, end int) byte {
+			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+			if begin == end {
+				input.Seek(int64(begin*len(buffer)), 0)
+				n, err := input.Read(buffer[:])
+				if err == io.EOF {
+					panic("symbol not found")
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("not all bytes read")
+				}
+				return buffer[len(buffer)-1]
+			}
+			a, b := float32(0.0), float32(0.0)
+			for range 256 {
+				index := rng.Intn(end-begin)/2 + begin
+				input.Seek(int64(index*len(buffer)), 0)
+				n, err := input.Read(buffer[:])
+				if err == io.EOF {
+					continue
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("not all bytes read")
+				}
+				for j := range vector {
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer[j*4+3-k])
+					}
+					vector[j] = math.Float32frombits(value)
+				}
+				a += CS(vector[:], current[:])
+			}
+			for range 256 {
+				index := end - rng.Intn(end-begin)/2
+				input.Seek(int64(index*len(buffer)), 0)
+				n, err := input.Read(buffer[:])
+				if err == io.EOF {
+					continue
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("not all bytes read")
+				}
+				for j := range vector {
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer[j*4+3-k])
+					}
+					vector[j] = math.Float32frombits(value)
+				}
+				b += CS(vector[:], current[:])
+			}
+			if a > b {
+				return search(begin, begin+(end-begin)/2)
+			}
+			return search(begin+(end-begin)/2, end)
+		}
+		fmt.Printf("%c\n", search(0, int(length)))
 		return
 	}
 
