@@ -312,6 +312,7 @@ func main() {
 				return symbol
 			}
 			a, b := float32(0.0), float32(0.0)
+			aa, bb := make([]float32, 0, Samples), make([]float32, 0, Samples)
 			for range Samples {
 				index := rng.Intn(end-begin)/2 + begin
 				input.Seek(int64(index*len(buffer)), 0)
@@ -332,7 +333,9 @@ func main() {
 					}
 					vector[j] = math.Float32frombits(value)
 				}
-				a += CS(vector[:], current[:])
+				cs := CS(vector[:], current[:])
+				a += cs
+				aa = append(aa, cs)
 			}
 			for range Samples {
 				index := end - rng.Intn(end-begin)/2
@@ -354,12 +357,27 @@ func main() {
 					}
 					vector[j] = math.Float32frombits(value)
 				}
-				b += CS(vector[:], current[:])
+				cs := CS(vector[:], current[:])
+				b += cs
+				bb = append(bb, cs)
 			}
+			a /= float32(Samples)
+			b /= float32(Samples)
+			va, vb := float32(0.0), float32(0.0)
+			for _, v := range aa {
+				diff := v - a
+				va += diff * diff
+			}
+			va /= float32(Samples)
+			for _, v := range bb {
+				diff := v - b
+				vb += diff * diff
+			}
+			vb /= float32(Samples)
 			if samples > 256 {
 				samples >>= 1
 			}
-			if a > b {
+			if va < vb {
 				return search(samples, begin, begin+(end-begin)/2)
 			}
 			return search(samples, begin+(end-begin)/2, end)
