@@ -255,6 +255,9 @@ func main() {
 			forward[v] = code
 			reverse[code] = v
 			code++
+			if code > 255 {
+				panic("not enough codes")
+			}
 		}
 	}
 
