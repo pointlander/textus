@@ -22,7 +22,7 @@ const (
 	// ItemSize is the size of a row
 	ItemSize = VectorSize + 1
 	// Samples is the number of samples
-	Samples = 8 * 1024
+	Samples = 16 * 1024
 )
 
 //go:embed books/*
@@ -258,8 +258,8 @@ func main() {
 
 		rng := rand.New(rand.NewSource(1))
 		current := m.Mix()
-		var search func(begin, end int) byte
-		search = func(begin, end int) byte {
+		var search func(samples, begin, end int) byte
+		search = func(samples, begin, end int) byte {
 			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
 			if end-begin <= Samples {
 				input.Seek(int64(begin*len(buffer)), 0)
@@ -333,13 +333,16 @@ func main() {
 				}
 				b += CS(vector[:], current[:])
 			}
-			if a > b {
-				return search(begin, begin+(end-begin)/2)
+			if samples > 256 {
+				samples <<= 1
 			}
-			return search(begin+(end-begin)/2, end)
+			if a > b {
+				return search(samples, begin, begin+(end-begin)/2)
+			}
+			return search(samples, begin+(end-begin)/2, end)
 		}
 		for range 256 {
-			symbol := search(0, int(length))
+			symbol := search(Samples, 0, int(length))
 			fmt.Printf("%c", symbol)
 			m.Add(symbol)
 			current = m.Mix()
