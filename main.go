@@ -22,7 +22,7 @@ const (
 	// ItemSize is the size of a row
 	ItemSize = VectorSize + 1
 	// Samples is the number of samples
-	Samples = 16 * 1024
+	Samples = 8 * 1024
 )
 
 //go:embed books/*
@@ -238,6 +238,26 @@ func main() {
 		return
 	}
 
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	forward, reverse, code := make(map[rune]byte), make(map[byte]rune), byte(0)
+	for _, v := range string(data) {
+		if _, ok := forward[v]; !ok {
+			forward[v] = code
+			reverse[code] = v
+			code++
+		}
+	}
+
 	if *FlagPrompt != "" {
 		m := NewFiltered()
 		for _, v := range []byte(*FlagPrompt) {
@@ -334,7 +354,7 @@ func main() {
 				b += CS(vector[:], current[:])
 			}
 			if samples > 256 {
-				samples <<= 1
+				samples >>= 1
 			}
 			if a > b {
 				return search(samples, begin, begin+(end-begin)/2)
@@ -343,22 +363,11 @@ func main() {
 		}
 		for range 256 {
 			symbol := search(Samples, 0, int(length))
-			fmt.Printf("%c", symbol)
+			fmt.Printf("%c", reverse[symbol])
 			m.Add(symbol)
 			current = m.Mix()
 		}
 		return
-	}
-
-	file, err := Data.Open("books/100.txt.utf-8.bz2")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-	reader := bzip2.NewReader(file)
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		panic(err)
 	}
 
 	db, err := os.Create("db.bin")
@@ -367,16 +376,10 @@ func main() {
 	}
 	defer db.Close()
 
-	index, err := os.Create("index.bin")
-	if err != nil {
-		panic(err)
-	}
-	defer index.Close()
-
 	m := NewFiltered()
 	m.Add(0)
 	buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
-	for i, v := range data {
+	for _, v := range string(data) {
 		vector := m.Mix()
 		for _, v := range vector {
 			bits := math.Float32bits(v)
@@ -391,7 +394,7 @@ func main() {
 				panic("4 bytes should be been written")
 			}
 		}
-		buffer8[0] = v
+		buffer8[0] = forward[v]
 		n, err := db.Write(buffer8)
 		if err != nil {
 			panic(err)
@@ -399,23 +402,6 @@ func main() {
 		if n != 1 {
 			panic("1 byte should be been written")
 		}
-
-		if (i+128)%256 == 0 {
-			for _, v := range vector {
-				bits := math.Float32bits(v)
-				for i := range buffer32 {
-					buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
-				}
-				n, err := index.Write(buffer32)
-				if err != nil {
-					panic(err)
-				}
-				if n != len(buffer32) {
-					panic("4 bytes should be been written")
-				}
-			}
-		}
-
-		m.Add(v)
+		m.Add(forward[v])
 	}
 }
