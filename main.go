@@ -262,7 +262,7 @@ func main() {
 	}
 
 	if *FlagPrompt != "" {
-		m := NewFiltered()
+		m := NewMixer()
 		for _, v := range []byte(*FlagPrompt) {
 			m.Add(v)
 		}
@@ -281,10 +281,10 @@ func main() {
 
 		rng := rand.New(rand.NewSource(1))
 		current := m.Mix()
-		var search func(samples, begin, end int) byte
-		search = func(samples, begin, end int) byte {
+		var search func(vaa, vbb float32, samples, begin, end int) byte
+		search = func(vaa, vbb float32, samples, begin, end int) byte {
 			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-			if end-begin <= Samples {
+			if end-begin <= Samples || (vaa == 0 && vbb == 0) {
 				input.Seek(int64(begin*len(buffer)), 0)
 				max, symbol := float32(0.0), byte(0)
 				for range end - begin {
@@ -378,12 +378,12 @@ func main() {
 				samples >>= 1
 			}
 			if va < vb {
-				return search(samples, begin, begin+(end-begin)/2)
+				return search(va, vb, samples, begin, begin+(end-begin)/2)
 			}
-			return search(samples, begin+(end-begin)/2, end)
+			return search(va, vb, samples, begin+(end-begin)/2, end)
 		}
 		for range 256 {
-			symbol := search(Samples, 0, int(length))
+			symbol := search(1, 1, Samples, 0, int(length))
 			fmt.Printf("%c", reverse[symbol])
 			m.Add(symbol)
 			current = m.Mix()
@@ -397,7 +397,7 @@ func main() {
 	}
 	defer db.Close()
 
-	m := NewFiltered()
+	m := NewMixer()
 	m.Add(0)
 	buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
 	for _, v := range string(data) {
