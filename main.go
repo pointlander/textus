@@ -14,6 +14,8 @@ import (
 	"math/bits"
 	"math/rand"
 	"os"
+
+	"github.com/pointlander/textus/vector"
 )
 
 const (
@@ -436,5 +438,77 @@ func main() {
 	if *FlagMach2 {
 		Mach2()
 		return
+	}
+
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	forward, reverse, code := make(map[rune]byte), make(map[byte]rune), byte(0)
+	for _, v := range string(data) {
+		if _, ok := forward[v]; !ok {
+			forward[v] = code
+			reverse[code] = v
+			code++
+			if code > 255 {
+				panic("not enough codes")
+			}
+		}
+	}
+
+	db, err := os.Create("db.bin")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	rng := rand.New(rand.NewSource(1))
+	var vectors [64][2][256]float32
+	for i := range vectors {
+		for j := range vectors[i] {
+			v := vectors[i][j][:]
+			for k := range v {
+				v[k] = rng.Float32()
+			}
+			vv := sqrt(vector.Dot(v, v))
+			for k := range v {
+				v[k] /= vv
+			}
+		}
+	}
+
+	m := NewFiltered()
+	m.Add(0)
+	buffer64 := make([]byte, 8)
+	for _, v := range string(data) {
+		vec := m.Mix()
+		bits := uint64(0)
+		for i := range vectors {
+			bits <<= 1
+			a, b := vector.Dot(vectors[i][0][:], vec[:]), vector.Dot(vectors[i][1][:], vec[:])
+			if a > b {
+				bits |= 1
+			}
+		}
+
+		for i := range buffer64 {
+			buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
+		}
+		n, err := db.Write(buffer64)
+		if err != nil {
+			panic(err)
+		}
+		if n != len(buffer64) {
+			panic("8 bytes should be been written")
+		}
+
+		m.Add(forward[v])
 	}
 }
