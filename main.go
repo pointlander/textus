@@ -32,9 +32,12 @@ var (
 	// FlagPrompt prompt for the model
 	FlagPrompt = flag.String("prompt", "", "prompt for the model")
 	// FlagMach1 mach 1 mode
-	FlagMach1 = flag.Bool("mach1", false, "mach 1 mode")
+	FlagMach1 = flag.Bool("mach1", false, "mach 1 model")
+	// FlagMach2 mach 2 model
+	FlagMach2 = flag.Bool("mach2", false, "mach 2 model")
 )
 
+// Mach1 model
 func Mach1() {
 	if *FlagPrompt != "" {
 		m := NewFiltered()
@@ -230,13 +233,8 @@ func Mach1() {
 	}
 }
 
-func main() {
-	flag.Parse()
-
-	if *FlagMach1 {
-		Mach1()
-		return
-	}
+// Mach2 mach 2 model
+func Mach2() {
 
 	file, err := Data.Open("books/100.txt.utf-8.bz2")
 	if err != nil {
@@ -424,5 +422,19 @@ func main() {
 			panic("1 byte should be been written")
 		}
 		m.Add(forward[v])
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	if *FlagMach1 {
+		Mach1()
+		return
+	}
+
+	if *FlagMach2 {
+		Mach2()
+		return
 	}
 }
