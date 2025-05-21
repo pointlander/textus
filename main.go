@@ -463,7 +463,7 @@ func main() {
 	}
 
 	rng := rand.New(rand.NewSource(1))
-	var vectors [64][2][256]float32
+	var vectors [128][2][256]float32
 	for i := range vectors {
 		for j := range vectors[i] {
 			v := vectors[i][j][:]
@@ -493,43 +493,45 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		length := info.Size() / 8
+		length := info.Size() / (2 * 8)
 
 		buffer64 := make([]byte, 8)
-		items := make([]uint64, length)
+		items := make([][2]uint64, length)
 		for i := range items {
-			n, err := input.Read(buffer64)
-			if err == io.EOF {
-				panic("symbol not found")
-			} else if err != nil {
-				panic(err)
+			for j := range items[i] {
+				n, err := input.Read(buffer64)
+				if err == io.EOF {
+					panic("symbol not found")
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer64) {
+					panic("not all bytes read")
+				}
+				value := uint64(0)
+				for k := 0; k < 8; k++ {
+					value <<= 8
+					value |= uint64(buffer64[7-k])
+				}
+				items[i][j] = value
 			}
-			if n != len(buffer64) {
-				panic("not all bytes read")
-			}
-			value := uint64(0)
-			for k := 0; k < 8; k++ {
-				value <<= 8
-				value |= uint64(buffer64[7-k])
-			}
-			items[i] = value
 		}
 
 		datum := []rune(string(data))
 		for i := 0; i < 256; i++ {
 			vec := m.Mix()
-			bit := uint64(0)
+			bit := [2]uint64{}
 			for j := range vectors {
-				bit <<= 1
+				bit[j/64] <<= 1
 				a, b := vector.Dot(vectors[j][0][:], vec[:]), vector.Dot(vectors[j][1][:], vec[:])
 				if a > b {
-					bit |= 1
+					bit[j/64] |= 1
 				}
 			}
 
 			min, index := 64, 0
 			for j := range items {
-				if a := bits.OnesCount64(items[j] ^ bit); a <= min {
+				if a := bits.OnesCount64(items[j][0]^bit[0]) + bits.OnesCount64(items[j][1]^bit[1]); a < min {
 					min, index = a, j
 				}
 			}
@@ -551,26 +553,27 @@ func main() {
 	buffer64 := make([]byte, 8)
 	for _, v := range string(data) {
 		vec := m.Mix()
-		bits := uint64(0)
-		for i := range vectors {
-			bits <<= 1
-			a, b := vector.Dot(vectors[i][0][:], vec[:]), vector.Dot(vectors[i][1][:], vec[:])
-			if a > b {
-				bits |= 1
+		bits := [2]uint64{}
+		for j := range bits {
+			for i := range vectors {
+				bits[j] <<= 1
+				a, b := vector.Dot(vectors[i][0][:], vec[:]), vector.Dot(vectors[i][1][:], vec[:])
+				if a > b {
+					bits[j] |= 1
+				}
+			}
+
+			for i := range buffer64 {
+				buffer64[i] = byte((bits[j] >> (8 * i)) & 0xFF)
+			}
+			n, err := db.Write(buffer64)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer64) {
+				panic("8 bytes should be been written")
 			}
 		}
-
-		for i := range buffer64 {
-			buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
-		}
-		n, err := db.Write(buffer64)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(buffer64) {
-			panic("8 bytes should be been written")
-		}
-
 		m.Add(forward[v])
 	}
 }
