@@ -37,6 +37,8 @@ var (
 	FlagMach1 = flag.Bool("mach1", false, "mach 1 model")
 	// FlagMach2 mach 2 model
 	FlagMach2 = flag.Bool("mach2", false, "mach 2 model")
+	// FlagMach3 mach 3 model
+	FlagMach3 = flag.Bool("mach3", false, "mach 3 model")
 )
 
 // Mach1 model
@@ -426,19 +428,8 @@ func Mach2() {
 	}
 }
 
-func main() {
-	flag.Parse()
-
-	if *FlagMach1 {
-		Mach1()
-		return
-	}
-
-	if *FlagMach2 {
-		Mach2()
-		return
-	}
-
+// Mach3 mach 3 model
+func Mach3() {
 	file, err := Data.Open("books/100.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
@@ -575,5 +566,25 @@ func main() {
 			}
 		}
 		m.Add(forward[v])
+	}
+
+}
+
+func main() {
+	flag.Parse()
+
+	if *FlagMach1 {
+		Mach1()
+		return
+	}
+
+	if *FlagMach2 {
+		Mach2()
+		return
+	}
+
+	if *FlagMach3 {
+		Mach3()
+		return
 	}
 }
