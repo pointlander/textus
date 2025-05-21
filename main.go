@@ -587,4 +587,118 @@ func main() {
 		Mach3()
 		return
 	}
+
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	forward, reverse, code := make(map[rune]byte), make(map[byte]rune), byte(0)
+	for _, v := range string(data) {
+		if _, ok := forward[v]; !ok {
+			forward[v] = code
+			reverse[code] = v
+			code++
+			if code > 255 {
+				panic("not enough codes")
+			}
+		}
+	}
+
+	if *FlagPrompt != "" {
+		m := NewFiltered()
+		for _, v := range []byte(*FlagPrompt) {
+			m.Add(v)
+		}
+
+		input, err := os.Open("db.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer input.Close()
+
+		info, err := input.Stat()
+		if err != nil {
+			panic(err)
+		}
+		length := info.Size() / ItemSize
+
+		var search func(current [256]float32) byte
+		search = func(current [256]float32) byte {
+			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+			input.Seek(0, 0)
+			max, symbol := float32(0.0), byte(0)
+			for range length {
+				n, err := input.Read(buffer[:])
+				if err == io.EOF {
+					panic("symbol not found")
+				} else if err != nil {
+					panic(err)
+				}
+				if n != len(buffer) {
+					panic("not all bytes read")
+				}
+				for j := range vector {
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer[j*4+3-k])
+					}
+					vector[j] = math.Float32frombits(value)
+				}
+				if a := CS(vector[:], current[:]); a > max {
+					max, symbol = a, buffer[len(buffer)-1]
+				}
+			}
+			return symbol
+		}
+		for range 256 {
+			current := m.Mix()
+			symbol := search(current)
+			fmt.Printf("%c", reverse[symbol])
+			m.Add(symbol)
+		}
+		return
+	}
+
+	db, err := os.Create("db.bin")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	m := NewFiltered()
+	m.Add(0)
+	buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
+	for _, v := range string(data) {
+		vector := m.Mix()
+		for _, v := range vector {
+			bits := math.Float32bits(v)
+			for i := range buffer32 {
+				buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+			}
+			n, err := db.Write(buffer32)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer32) {
+				panic("4 bytes should be been written")
+			}
+		}
+		buffer8[0] = forward[v]
+		n, err := db.Write(buffer8)
+		if err != nil {
+			panic(err)
+		}
+		if n != 1 {
+			panic("1 byte should be been written")
+		}
+		m.Add(forward[v])
+	}
 }
