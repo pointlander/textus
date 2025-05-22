@@ -470,8 +470,8 @@ func Mach3() {
 
 	if *FlagPrompt != "" {
 		m := NewFiltered()
-		for _, v := range []byte(*FlagPrompt) {
-			m.Add(v)
+		for _, v := range []rune(*FlagPrompt) {
+			m.Add(forward[v])
 		}
 
 		input, err := os.Open("db.bin")
