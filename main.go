@@ -613,8 +613,8 @@ func main() {
 
 	if *FlagPrompt != "" {
 		m := NewFiltered()
-		for _, v := range []byte(*FlagPrompt) {
-			m.Add(v)
+		for _, v := range []rune(*FlagPrompt) {
+			m.Add(forward[v])
 		}
 
 		input, err := os.Open("db.bin")
@@ -629,9 +629,9 @@ func main() {
 		}
 		length := info.Size() / ItemSize
 
-		var search func(current [256]float32) byte
-		search = func(current [256]float32) byte {
-			buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+		var search func(current [InputSize]float32) byte
+		search = func(current [InputSize]float32) byte {
+			buffer, vec := [ItemSize]byte{}, [InputSize]float32{}
 			input.Seek(0, 0)
 			max, symbol := float32(0.0), byte(0)
 			for range length {
@@ -644,16 +644,16 @@ func main() {
 				if n != len(buffer) {
 					panic("not all bytes read")
 				}
-				for j := range vector {
+				for j := range vec {
 					value := uint32(0)
 					for k := 0; k < 4; k++ {
 						value <<= 8
 						value |= uint32(buffer[j*4+3-k])
 					}
-					vector[j] = math.Float32frombits(value)
+					vec[j] = math.Float32frombits(value)
 				}
-				if a := CS(vector[:], current[:]); a > max {
-					max, symbol = a, buffer[len(buffer)-1]
+				if a := vector.Dot(vec[:], current[:]); a > max {
+					max, symbol = a, buffer[ItemSize-1]
 				}
 			}
 			return symbol
