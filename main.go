@@ -14,6 +14,7 @@ import (
 	"math/bits"
 	"math/rand"
 	"os"
+	"runtime"
 
 	"github.com/pointlander/textus/vector"
 )
@@ -656,13 +657,41 @@ func main() {
 			items[x].Vector = vec
 			items[x].Symbol = buffer[ItemSize-1]
 		}
+		cpus := runtime.NumCPU()
+		count := len(items) / cpus
+		type Result struct {
+			Max    float32
+			Symbol byte
+		}
 
 		var search func(current [InputSize]float32) byte
 		search = func(current [InputSize]float32) byte {
+			results := make(chan Result, 8)
+			for i := range cpus {
+				begin, end := i*count, (i+1)*count
+				if end > len(items) {
+					end = len(items)
+				}
+				go func(begin, end int) {
+					items := items[begin:end]
+					max, symbol := float32(0.0), byte(0)
+					for x := range items {
+						if a := vector.Dot(items[x].Vector[:], current[:]); a > max {
+							max, symbol = a, items[x].Symbol
+						}
+					}
+					results <- Result{
+						Max:    max,
+						Symbol: symbol,
+					}
+				}(begin, end)
+			}
+
 			max, symbol := float32(0.0), byte(0)
-			for x := range items {
-				if a := vector.Dot(items[x].Vector[:], current[:]); a > max {
-					max, symbol = a, items[x].Symbol
+			for range cpus {
+				result := <-results
+				if result.Max > max {
+					max, symbol = result.Max, result.Symbol
 				}
 			}
 			return symbol
