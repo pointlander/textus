@@ -629,31 +629,40 @@ func main() {
 		}
 		length := info.Size() / ItemSize
 
+		type Item struct {
+			Vector [InputSize]float32
+			Symbol byte
+		}
+		items := make([]Item, length)
+		buffer, vec := [ItemSize]byte{}, [InputSize]float32{}
+		for x := range length {
+			n, err := input.Read(buffer[:])
+			if err == io.EOF {
+				panic("symbol not found")
+			} else if err != nil {
+				panic(err)
+			}
+			if n != len(buffer) {
+				panic("not all bytes read")
+			}
+			for j := range vec {
+				value := uint32(0)
+				for k := 0; k < 4; k++ {
+					value <<= 8
+					value |= uint32(buffer[j*4+3-k])
+				}
+				vec[j] = math.Float32frombits(value)
+			}
+			items[x].Vector = vec
+			items[x].Symbol = buffer[ItemSize-1]
+		}
+
 		var search func(current [InputSize]float32) byte
 		search = func(current [InputSize]float32) byte {
-			buffer, vec := [ItemSize]byte{}, [InputSize]float32{}
-			input.Seek(0, 0)
 			max, symbol := float32(0.0), byte(0)
-			for range length {
-				n, err := input.Read(buffer[:])
-				if err == io.EOF {
-					panic("symbol not found")
-				} else if err != nil {
-					panic(err)
-				}
-				if n != len(buffer) {
-					panic("not all bytes read")
-				}
-				for j := range vec {
-					value := uint32(0)
-					for k := 0; k < 4; k++ {
-						value <<= 8
-						value |= uint32(buffer[j*4+3-k])
-					}
-					vec[j] = math.Float32frombits(value)
-				}
-				if a := vector.Dot(vec[:], current[:]); a > max {
-					max, symbol = a, buffer[ItemSize-1]
+			for x := range items {
+				if a := vector.Dot(items[x].Vector[:], current[:]); a > max {
+					max, symbol = a, items[x].Symbol
 				}
 			}
 			return symbol
