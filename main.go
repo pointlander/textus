@@ -673,7 +673,7 @@ func main() {
 				if end > len(items) {
 					end = len(items)
 				}
-				go func(begin, end int, seed int64) {
+				go func(begin, end int) {
 					items := items[begin:end]
 					var result [10]Result
 					for x := range items {
@@ -693,7 +693,7 @@ func main() {
 						}
 					}
 					results <- result
-				}(begin, end, rng.Int63())
+				}(begin, end)
 			}
 
 			max, symbol := float32(0.0), byte(0)
