@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"sort"
 
 	"github.com/pointlander/textus/vector"
 )
@@ -664,8 +665,8 @@ func main() {
 			Symbol byte
 		}
 
-		var search func(rng *rand.Rand, current [InputSize]float32) byte
-		search = func(rng *rand.Rand, current [InputSize]float32) byte {
+		var search func(rng *rand.Rand, current [InputSize]float32) (float32, byte)
+		search = func(rng *rand.Rand, current [InputSize]float32) (float32, byte) {
 			results := make(chan [10]Result, 8)
 			for i := range cpus {
 				begin, end := i*count, (i+1)*count
@@ -696,21 +697,46 @@ func main() {
 			}
 
 			max, symbol := float32(0.0), byte(0)
+			combine := make([]Result, 0, 8)
 			for range cpus {
 				result := <-results
-				if result[len(result)-1].Max > max {
-					max, symbol = result[len(result)-1].Max, result[len(result)-1].Symbol
+				combine = append(combine, result[:]...)
+			}
+			sort.Slice(combine, func(i, j int) bool {
+				return combine[i].Max > combine[j].Max
+			})
+			sum := float32(0.0)
+			for j := range combine {
+				sum += combine[j].Max
+			}
+			total, selection, index := float32(0.0), rng.Float32(), 0
+			for j := range combine {
+				total += combine[j].Max / sum
+				if selection < total {
+					index = j
+					break
 				}
 			}
-			return symbol
+			max, symbol = combine[index].Max, combine[index].Symbol
+			return max, symbol
 		}
 		rng := rand.New(rand.NewSource(1))
-		for range 256 {
-			current := m.Mix()
-			symbol := search(rng, current)
-			fmt.Printf("%c", reverse[symbol])
-			m.Add(symbol)
+		max, symbols := float32(0.0), ""
+		for i := 0; i < 8; i++ {
+			sum, s := float32(0.0), ""
+			cp := m.Copy()
+			for range 256 {
+				current := cp.Mix()
+				max, symbol := search(rng, current)
+				sum += max
+				s += fmt.Sprintf("%c", reverse[symbol])
+				cp.Add(symbol)
+			}
+			if sum > max {
+				max, symbols = sum, s
+			}
 		}
+		fmt.Println(symbols)
 		return
 	}
 
