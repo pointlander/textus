@@ -18,6 +18,8 @@ import (
 	"sort"
 
 	"github.com/pointlander/textus/vector"
+
+	"github.com/alixaxel/pagerank"
 )
 
 const (
@@ -663,6 +665,8 @@ func main() {
 		type Result struct {
 			Max    float32
 			Symbol byte
+			Vector [InputSize]float32
+			Rank   float32
 		}
 
 		var search func(rng *rand.Rand, current [InputSize]float32) (float32, byte)
@@ -686,7 +690,7 @@ func main() {
 							j++
 						}
 						if j > 0 {
-							result[j-1] = Result{a, items[x].Symbol}
+							result[j-1] = Result{a, items[x].Symbol, items[x].Vector, 0.0}
 							if j > 1 {
 								result[j-2] = last
 							}
@@ -705,13 +709,19 @@ func main() {
 			sort.Slice(combine, func(i, j int) bool {
 				return combine[i].Max > combine[j].Max
 			})
-			sum := float32(0.0)
-			for j := range combine {
-				sum += combine[j].Max
+			graph := pagerank.NewGraph()
+			for i := 0; i < len(combine); i++ {
+				for j := 0; j < len(combine); j++ {
+					p := vector.Dot(combine[i].Vector[:], combine[j].Vector[:])
+					graph.Link(uint32(i), uint32(j), float64(p))
+				}
 			}
+			graph.Rank(1.0, 1e-3, func(node uint32, rank float64) {
+				combine[node].Rank = float32(rank)
+			})
 			total, selection, index := float32(0.0), rng.Float32(), 0
 			for j := range combine {
-				total += combine[j].Max / sum
+				total += combine[j].Rank
 				if selection < total {
 					index = j
 					break
