@@ -664,41 +664,50 @@ func main() {
 			Symbol byte
 		}
 
-		var search func(current [InputSize]float32) byte
-		search = func(current [InputSize]float32) byte {
-			results := make(chan Result, 8)
+		var search func(rng *rand.Rand, current [InputSize]float32) byte
+		search = func(rng *rand.Rand, current [InputSize]float32) byte {
+			results := make(chan [10]Result, 8)
 			for i := range cpus {
 				begin, end := i*count, (i+1)*count
 				if end > len(items) {
 					end = len(items)
 				}
-				go func(begin, end int) {
+				go func(begin, end int, seed int64) {
 					items := items[begin:end]
-					max, symbol := float32(0.0), byte(0)
+					var result [10]Result
 					for x := range items {
-						if a := vector.Dot(items[x].Vector[:], current[:]); a > max {
-							max, symbol = a, items[x].Symbol
+						j, a, last := 0, vector.Dot(items[x].Vector[:], current[:]), Result{}
+						for j < len(result) && a > result[j].Max {
+							if j > 0 {
+								result[j-1] = last
+							}
+							last = result[j]
+							j++
+						}
+						if j > 0 {
+							result[j-1] = Result{a, items[x].Symbol}
+							if j > 1 {
+								result[j-2] = last
+							}
 						}
 					}
-					results <- Result{
-						Max:    max,
-						Symbol: symbol,
-					}
-				}(begin, end)
+					results <- result
+				}(begin, end, rng.Int63())
 			}
 
 			max, symbol := float32(0.0), byte(0)
 			for range cpus {
 				result := <-results
-				if result.Max > max {
-					max, symbol = result.Max, result.Symbol
+				if result[len(result)-1].Max > max {
+					max, symbol = result[len(result)-1].Max, result[len(result)-1].Symbol
 				}
 			}
 			return symbol
 		}
+		rng := rand.New(rand.NewSource(1))
 		for range 256 {
 			current := m.Mix()
-			symbol := search(current)
+			symbol := search(rng, current)
 			fmt.Printf("%c", reverse[symbol])
 			m.Add(symbol)
 		}
