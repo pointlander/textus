@@ -681,19 +681,15 @@ func main() {
 					items := items[begin:end]
 					var result [10]Result
 					for x := range items {
-						j, a, last := 0, vector.Dot(items[x].Vector[:], current[:]), Result{}
+						j, a := 0, vector.Dot(items[x].Vector[:], current[:])
 						for j < len(result) && a > result[j].Max {
 							if j > 0 {
-								result[j-1] = last
+								result[j-1] = result[j]
 							}
-							last = result[j]
 							j++
 						}
 						if j > 0 {
 							result[j-1] = Result{a, items[x].Symbol, items[x].Vector, 0.0}
-							if j > 1 {
-								result[j-2] = last
-							}
 						}
 					}
 					results <- result
