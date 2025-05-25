@@ -574,6 +574,14 @@ func Mach3() {
 
 }
 
+func dot(a, b *[InputSize]float32) float64 {
+	sum := 0.0
+	for i, v := range a {
+		sum += float64(v) * float64(b[i])
+	}
+	return sum
+}
+
 func main() {
 	flag.Parse()
 
@@ -663,14 +671,14 @@ func main() {
 		cpus := runtime.NumCPU()
 		count := len(items) / cpus
 		type Result struct {
-			Max    float32
+			Max    float64
 			Symbol byte
 			Vector [InputSize]float32
-			Rank   float32
+			Rank   float64
 		}
 
-		var search func(rng *rand.Rand, current [InputSize]float32) (float32, byte)
-		search = func(rng *rand.Rand, current [InputSize]float32) (float32, byte) {
+		var search func(rng *rand.Rand, current [InputSize]float32) (float64, byte)
+		search = func(rng *rand.Rand, current [InputSize]float32) (float64, byte) {
 			results := make(chan [10]Result, 8)
 			for i := range cpus {
 				begin, end := i*count, (i+1)*count
@@ -681,7 +689,7 @@ func main() {
 					items := items[begin:end]
 					var result [10]Result
 					for x := range items {
-						j, a := 0, vector.Dot(items[x].Vector[:], current[:])
+						j, a := 0, dot(&items[x].Vector, &current)
 						for j < len(result) && a > result[j].Max {
 							if j > 0 {
 								result[j-1] = result[j]
@@ -696,7 +704,7 @@ func main() {
 				}(begin, end)
 			}
 
-			max, symbol := float32(0.0), byte(0)
+			max, symbol := 0.0, byte(0)
 			combine := make([]Result, 0, 8)
 			for range cpus {
 				result := <-results
@@ -708,14 +716,14 @@ func main() {
 			graph := pagerank.NewGraph()
 			for i := 0; i < len(combine); i++ {
 				for j := 0; j < len(combine); j++ {
-					p := vector.Dot(combine[i].Vector[:], combine[j].Vector[:])
-					graph.Link(uint32(i), uint32(j), float64(p))
+					p := dot(&combine[i].Vector, &combine[j].Vector)
+					graph.Link(uint32(i), uint32(j), p)
 				}
 			}
 			graph.Rank(1.0, 1e-3, func(node uint32, rank float64) {
-				combine[node].Rank = float32(rank)
+				combine[node].Rank = rank
 			})
-			total, selection, index := float32(0.0), rng.Float32(), 0
+			total, selection, index := 0.0, rng.Float64(), 0
 			for j := range combine {
 				total += combine[j].Rank
 				if selection < total {
@@ -727,9 +735,9 @@ func main() {
 			return max, symbol
 		}
 		rng := rand.New(rand.NewSource(1))
-		max, symbols := float32(0.0), ""
+		max, symbols := 0.0, ""
 		for i := 0; i < 8; i++ {
-			sum, s := float32(0.0), ""
+			sum, s := 0.0, ""
 			cp := m.Copy()
 			for range 256 {
 				current := cp.Mix()
