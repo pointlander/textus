@@ -37,6 +37,10 @@ var Data embed.FS
 var (
 	// FlagPrompt prompt for the model
 	FlagPrompt = flag.String("prompt", "", "prompt for the model")
+	// FlagBuild build the bin file
+	FlagBuild = flag.Bool("build", false, "build the bin file")
+	// FlagCompress compress the bin file
+	FlagCompress = flag.Bool("compress", false, "compress the bin file")
 	// FlagMach1 mach 1 mode
 	FlagMach1 = flag.Bool("mach1", false, "mach 1 model")
 	// FlagMach2 mach 2 model
@@ -669,23 +673,26 @@ func main() {
 			items[x].Symbol = buffer[ItemSize-1]
 		}
 
-		test, err := os.Create("test.txt")
-		if err != nil {
-			panic(err)
-		}
-		defer test.Close()
+		if *FlagCompress {
+			test, err := os.Create("test.txt")
+			if err != nil {
+				panic(err)
+			}
+			defer test.Close()
 
-		for i := 0; i < int(length)-512; i += 512 {
-			histogram := [256]uint64{}
-			begin, end := i, i+1024
-			if end > len(items) {
-				end = len(items)
+			for i := 0; i < int(length)-512; i += 512 {
+				histogram := [256]uint64{}
+				begin, end := i, i+1024
+				if end > len(items) {
+					end = len(items)
+				}
+				items := items[begin:end]
+				for j := range items {
+					histogram[items[j].Symbol]++
+				}
+				fmt.Fprintln(test, histogram)
 			}
-			items := items[begin:end]
-			for j := range items {
-				histogram[items[j].Symbol]++
-			}
-			fmt.Fprintln(test, histogram)
+			return
 		}
 
 		cpus := runtime.NumCPU()
@@ -774,38 +781,41 @@ func main() {
 		return
 	}
 
-	db, err := os.Create("db.bin")
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	m := NewFiltered()
-	m.Add(0)
-	buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
-	for _, v := range string(data) {
-		vector := m.Mix()
-		for _, v := range vector {
-			bits := math.Float32bits(v)
-			for i := range buffer32 {
-				buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
-			}
-			n, err := db.Write(buffer32)
-			if err != nil {
-				panic(err)
-			}
-			if n != len(buffer32) {
-				panic("4 bytes should be been written")
-			}
-		}
-		buffer8[0] = forward[v]
-		n, err := db.Write(buffer8)
+	if *FlagBuild {
+		db, err := os.Create("db.bin")
 		if err != nil {
 			panic(err)
 		}
-		if n != 1 {
-			panic("1 byte should be been written")
+		defer db.Close()
+
+		m := NewFiltered()
+		m.Add(0)
+		buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
+		for _, v := range string(data) {
+			vector := m.Mix()
+			for _, v := range vector {
+				bits := math.Float32bits(v)
+				for i := range buffer32 {
+					buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+				}
+				n, err := db.Write(buffer32)
+				if err != nil {
+					panic(err)
+				}
+				if n != len(buffer32) {
+					panic("4 bytes should be been written")
+				}
+			}
+			buffer8[0] = forward[v]
+			n, err := db.Write(buffer8)
+			if err != nil {
+				panic(err)
+			}
+			if n != 1 {
+				panic("1 byte should be been written")
+			}
+			m.Add(forward[v])
 		}
-		m.Add(forward[v])
+		return
 	}
 }
