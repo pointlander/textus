@@ -668,6 +668,26 @@ func main() {
 			items[x].Vector = vec
 			items[x].Symbol = buffer[ItemSize-1]
 		}
+
+		test, err := os.Create("test.txt")
+		if err != nil {
+			panic(err)
+		}
+		defer test.Close()
+
+		for i := 0; i < int(length)-512; i += 512 {
+			histogram := [256]uint64{}
+			begin, end := i, i+1024
+			if end > len(items) {
+				end = len(items)
+			}
+			items := items[begin:end]
+			for j := range items {
+				histogram[items[j].Symbol]++
+			}
+			fmt.Fprintln(test, histogram)
+		}
+
 		cpus := runtime.NumCPU()
 		count := len(items) / cpus
 		type Result struct {
