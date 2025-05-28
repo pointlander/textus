@@ -22,6 +22,9 @@ import (
 	"github.com/alixaxel/pagerank"
 )
 
+// todo
+// calculate page rank of mixer stochastic tree searches
+
 const (
 	// VectorSize is the size of a vector
 	VectorSize = InputSize * 4
