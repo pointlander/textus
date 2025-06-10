@@ -5,8 +5,10 @@
 package main
 
 import (
+	"compress/bzip2"
 	"embed"
 	"flag"
+	"io"
 )
 
 // todo
@@ -70,5 +72,79 @@ func main() {
 	if *FlagMach4 {
 		Mach4()
 		return
+	}
+
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	forward, reverse, code := make(map[rune]byte), make(map[byte]rune), byte(0)
+	for _, v := range string(data) {
+		if _, ok := forward[v]; !ok {
+			forward[v] = code
+			reverse[code] = v
+			code++
+			if code > 255 {
+				panic("not enough codes")
+			}
+		}
+	}
+	size := len(forward)
+
+	if *FlagBuild {
+		m := NewFiltered()
+		m.Add(0)
+		avg := make([][]float32, size)
+		for i := range avg {
+			avg[i] = make([]float32, 256)
+		}
+		symbols := []rune(string(data))
+		for _, symbol := range symbols {
+			vector := m.Mix()
+			for i, value := range vector {
+				avg[forward[symbol]][i] += value
+			}
+			m.Add(forward[symbol])
+		}
+		for i := range avg {
+			for ii := range avg[i] {
+				avg[i][ii] /= float32(len(symbols))
+			}
+		}
+
+		m = NewFiltered()
+		m.Add(0)
+		cov := make([][][]float32, size)
+		for i := range cov {
+			cov[i] = make([][]float32, 256)
+			for ii := range cov[i] {
+				cov[i][ii] = make([]float32, 256)
+			}
+		}
+		for _, symbol := range symbols {
+			vector := m.Mix()
+			for i, a := range vector {
+				for ii, b := range vector {
+					diff1 := avg[forward[symbol]][i] - a
+					diff2 := avg[forward[symbol]][ii] - b
+					cov[forward[symbol]][i][ii] += diff1 * diff2
+				}
+			}
+			m.Add(forward[symbol])
+		}
+		for i := range cov {
+			for ii := range cov[i] {
+				for iii := range cov[i][ii] {
+					cov[i][ii][iii] = cov[i][ii][ii] / float32(len(symbols))
+				}
+			}
+		}
 	}
 }
