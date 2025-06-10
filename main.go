@@ -107,11 +107,11 @@ func main() {
 		}
 		symbols := []rune(string(data))
 		for _, symbol := range symbols {
-			vector := m.Mix()
+			vector, code := m.Mix(), forward[symbol]
 			for i, value := range vector {
-				avg[forward[symbol]][i] += value
+				avg[code][i] += value
 			}
-			m.Add(forward[symbol])
+			m.Add(code)
 		}
 		for i := range avg {
 			for ii := range avg[i] {
@@ -129,15 +129,15 @@ func main() {
 			}
 		}
 		for _, symbol := range symbols {
-			vector := m.Mix()
+			vector, code := m.Mix(), forward[symbol]
 			for i, a := range vector {
+				diff1 := avg[code][i] - a
 				for ii, b := range vector {
-					diff1 := avg[forward[symbol]][i] - a
-					diff2 := avg[forward[symbol]][ii] - b
-					cov[forward[symbol]][i][ii] += diff1 * diff2
+					diff2 := avg[code][ii] - b
+					cov[code][i][ii] += diff1 * diff2
 				}
 			}
-			m.Add(forward[symbol])
+			m.Add(code)
 		}
 		for i := range cov {
 			for ii := range cov[i] {
