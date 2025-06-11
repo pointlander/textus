@@ -12,7 +12,16 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
+	"strings"
+
+	"github.com/pointlander/gradient/tf32"
+
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
+	"gonum.org/v1/plot/vg/draw"
 )
 
 // todo
@@ -25,6 +34,26 @@ const (
 	ItemSize = VectorSize + 1
 	// Samples is the number of samples
 	Samples = 8 * 1024
+)
+
+const (
+	// B1 exponential decay of the rate for the first moment estimates
+	B1 = 0.8
+	// B2 exponential decay rate for the second-moment estimates
+	B2 = 0.89
+	// Eta is the learning rate
+	Eta = 1.0e-3
+	// Scale is the scale of the model
+	Scale = 128
+)
+
+const (
+	// StateM is the state for the mean
+	StateM = iota
+	// StateV is the state for the variance
+	StateV
+	// StateTotal is the total number of states
+	StateTotal
 )
 
 //go:embed books/*
@@ -248,6 +277,203 @@ func main() {
 					}
 				}
 			}
+		}
+
+		rng := rand.New(rand.NewSource(1))
+		for s := range avg {
+			size := 256
+			set := tf32.NewSet()
+			set.Add("A", size, size)
+			set.Add("AI", size, size)
+
+			for i := range set.Weights {
+				w := set.Weights[i]
+				if strings.HasPrefix(w.N, "b") {
+					w.X = w.X[:cap(w.X)]
+					w.States = make([][]float32, StateTotal)
+					for ii := range w.States {
+						w.States[ii] = make([]float32, len(w.X))
+					}
+					continue
+				}
+				factor := math.Sqrt(2.0 / float64(w.S[0]))
+				for range cap(w.X) {
+					w.X = append(w.X, float32(rng.NormFloat64()*factor))
+				}
+				w.States = make([][]float32, StateTotal)
+				for ii := range w.States {
+					w.States[ii] = make([]float32, len(w.X))
+				}
+			}
+
+			others := tf32.NewSet()
+			others.Add("E", size, size)
+			others.Add("I", size, size)
+			E := others.ByName["E"]
+			for i := range cov {
+				for ii := range cov[i] {
+					E.X = append(E.X, cov[s][i][ii])
+				}
+			}
+			I := others.ByName["I"]
+			for i := range size {
+				for ii := range size {
+					if i == ii {
+						I.X = append(I.X, 1)
+					} else {
+						I.X = append(I.X, 0)
+					}
+				}
+			}
+
+			{
+				loss := tf32.Sum(tf32.Quadratic(others.Get("E"), tf32.Mul(set.Get("A"), set.Get("A"))))
+
+				points := make(plotter.XYs, 0, 8)
+				for i := range 1024 {
+					pow := func(x float64) float32 {
+						y := math.Pow(x, float64(i+1))
+						if math.IsNaN(y) || math.IsInf(y, 0) {
+							return 0
+						}
+						return float32(y)
+					}
+
+					set.Zero()
+					others.Zero()
+					cost := tf32.Gradient(loss).X[0]
+					if math.IsNaN(float64(cost)) || math.IsInf(float64(cost), 0) {
+						fmt.Println(i, cost)
+						break
+					}
+
+					norm := 0.0
+					for _, p := range set.Weights {
+						for _, d := range p.D {
+							norm += float64(d * d)
+						}
+					}
+					norm = math.Sqrt(norm)
+					b1, b2 := pow(B1), pow(B2)
+					scaling := 1.0
+					if norm > 1 {
+						scaling = 1 / norm
+					}
+					for _, w := range set.Weights {
+						if w.N != "A" {
+							continue
+						}
+						for ii, d := range w.D {
+							g := d * float32(scaling)
+							m := B1*w.States[StateM][ii] + (1-B1)*g
+							v := B2*w.States[StateV][ii] + (1-B2)*g*g
+							w.States[StateM][ii] = m
+							w.States[StateV][ii] = v
+							mhat := m / (1 - b1)
+							vhat := v / (1 - b2)
+							if vhat < 0 {
+								vhat = 0
+							}
+							w.X[ii] -= Eta * mhat / (float32(math.Sqrt(float64(vhat))) + 1e-8)
+						}
+					}
+					points = append(points, plotter.XY{X: float64(i), Y: float64(cost)})
+				}
+
+				p := plot.New()
+
+				p.Title.Text = "epochs vs cost"
+				p.X.Label.Text = "epochs"
+				p.Y.Label.Text = "cost"
+
+				scatter, err := plotter.NewScatter(points)
+				if err != nil {
+					panic(err)
+				}
+				scatter.GlyphStyle.Radius = vg.Length(1)
+				scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+				p.Add(scatter)
+
+				err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("plots/%d_epochs.png", s))
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			{
+				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("A"), set.Get("AI"))))
+
+				points := make(plotter.XYs, 0, 8)
+				for i := range 16 * 1024 {
+					pow := func(x float64) float32 {
+						y := math.Pow(x, float64(i+1))
+						if math.IsNaN(y) || math.IsInf(y, 0) {
+							return 0
+						}
+						return float32(y)
+					}
+
+					set.Zero()
+					others.Zero()
+					cost := tf32.Gradient(loss).X[0]
+					if math.IsNaN(float64(cost)) || math.IsInf(float64(cost), 0) {
+						fmt.Println(i, cost)
+						break
+					}
+
+					norm := 0.0
+					for _, p := range set.Weights {
+						for _, d := range p.D {
+							norm += float64(d * d)
+						}
+					}
+					norm = math.Sqrt(norm)
+					b1, b2 := pow(B1), pow(B2)
+					scaling := 1.0
+					if norm > 1 {
+						scaling = 1 / norm
+					}
+					for _, w := range set.Weights {
+						if w.N != "AI" {
+							continue
+						}
+						for ii, d := range w.D {
+							g := d * float32(scaling)
+							m := B1*w.States[StateM][ii] + (1-B1)*g
+							v := B2*w.States[StateV][ii] + (1-B2)*g*g
+							w.States[StateM][ii] = m
+							w.States[StateV][ii] = v
+							mhat := m / (1 - b1)
+							vhat := v / (1 - b2)
+							if vhat < 0 {
+								vhat = 0
+							}
+							w.X[ii] -= Eta * mhat / (float32(math.Sqrt(float64(vhat))) + 1e-8)
+						}
+					}
+					points = append(points, plotter.XY{X: float64(i), Y: float64(cost)})
+				}
+
+				p := plot.New()
+
+				p.Title.Text = "epochs vs cost"
+				p.X.Label.Text = "epochs"
+				p.Y.Label.Text = "cost"
+
+				scatter, err := plotter.NewScatter(points)
+				if err != nil {
+					panic(err)
+				}
+				scatter.GlyphStyle.Radius = vg.Length(1)
+				scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+				p.Add(scatter)
+
+				err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("plots/%d_inverse_epochs.png", s))
+				if err != nil {
+					panic(err)
+				}
+			}
+
 		}
 	}
 }
