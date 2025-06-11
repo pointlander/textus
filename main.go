@@ -7,8 +7,12 @@ package main
 import (
 	"compress/bzip2"
 	"embed"
+	"errors"
 	"flag"
+	"fmt"
 	"io"
+	"math"
+	"os"
 )
 
 // todo
@@ -99,28 +103,12 @@ func main() {
 	size := len(forward)
 
 	if *FlagBuild {
-		m := NewFiltered()
-		m.Add(0)
+		const fileName = "statistics.bin"
+		_, err := os.Stat(fileName)
 		avg := make([][]float32, size)
 		for i := range avg {
 			avg[i] = make([]float32, 256)
 		}
-		symbols := []rune(string(data))
-		for _, symbol := range symbols {
-			vector, code := m.Mix(), forward[symbol]
-			for i, value := range vector {
-				avg[code][i] += value
-			}
-			m.Add(code)
-		}
-		for i := range avg {
-			for ii := range avg[i] {
-				avg[i][ii] /= float32(len(symbols))
-			}
-		}
-
-		m = NewFiltered()
-		m.Add(0)
 		cov := make([][][]float32, size)
 		for i := range cov {
 			cov[i] = make([][]float32, 256)
@@ -128,21 +116,136 @@ func main() {
 				cov[i][ii] = make([]float32, 256)
 			}
 		}
-		for _, symbol := range symbols {
-			vector, code := m.Mix(), forward[symbol]
-			for i, a := range vector {
-				diff1 := avg[code][i] - a
-				for ii, b := range vector {
-					diff2 := avg[code][ii] - b
-					cov[code][i][ii] += diff1 * diff2
+		if errors.Is(err, os.ErrNotExist) {
+			out, err := os.Create(fileName)
+			if err != nil {
+				panic(err)
+			}
+			defer out.Close()
+
+			m := NewFiltered()
+			m.Add(0)
+			symbols := []rune(string(data))
+			for _, symbol := range symbols {
+				vector, code := m.Mix(), forward[symbol]
+				for i, value := range vector {
+					avg[code][i] += value
+				}
+				m.Add(code)
+			}
+			for i := range avg {
+				for ii := range avg[i] {
+					avg[i][ii] /= float32(len(symbols))
 				}
 			}
-			m.Add(code)
-		}
-		for i := range cov {
-			for ii := range cov[i] {
-				for iii := range cov[i][ii] {
-					cov[i][ii][iii] = cov[i][ii][ii] / float32(len(symbols))
+
+			m = NewFiltered()
+			m.Add(0)
+			cov := make([][][]float32, size)
+			for i := range cov {
+				cov[i] = make([][]float32, 256)
+				for ii := range cov[i] {
+					cov[i][ii] = make([]float32, 256)
+				}
+			}
+			for _, symbol := range symbols {
+				vector, code := m.Mix(), forward[symbol]
+				for i, a := range vector {
+					diff1 := avg[code][i] - a
+					for ii, b := range vector {
+						diff2 := avg[code][ii] - b
+						cov[code][i][ii] += diff1 * diff2
+					}
+				}
+				m.Add(code)
+			}
+			for i := range cov {
+				for ii := range cov[i] {
+					for iii := range cov[i][ii] {
+						cov[i][ii][iii] = cov[i][ii][ii] / float32(len(symbols))
+					}
+				}
+			}
+
+			buffer32 := make([]byte, 4)
+			for i := range avg {
+				for ii := range avg[i] {
+					bits := math.Float32bits(avg[i][ii])
+					for i := range buffer32 {
+						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					}
+					n, err := out.Write(buffer32)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic("4 bytes should be been written")
+					}
+				}
+			}
+			for i := range cov {
+				for ii := range cov[i] {
+					for iii := range cov[i][ii] {
+						bits := math.Float32bits(cov[i][ii][iii])
+						for i := range buffer32 {
+							buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+						}
+						n, err := out.Write(buffer32)
+						if err != nil {
+							panic(err)
+						}
+						if n != len(buffer32) {
+							panic("4 bytes should be been written")
+						}
+					}
+				}
+			}
+		} else {
+			input, err := os.Open(fileName)
+			if err != nil {
+				panic(err)
+			}
+			defer input.Close()
+
+			buffer32 := make([]byte, 4)
+			for i := range avg {
+				for ii := range avg[i] {
+					n, err := input.Read(buffer32)
+					if err == io.EOF {
+						panic(err)
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic(fmt.Errorf("not all bytes read: %d", n))
+					}
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer32[3-k])
+					}
+					avg[i][ii] = math.Float32frombits(value)
+				}
+			}
+			for i := range cov {
+				for ii := range cov[i] {
+					for iii := range cov[i][ii] {
+						n, err := input.Read(buffer32)
+						if err == io.EOF {
+							panic(err)
+						} else if err != nil {
+							panic(err)
+						}
+						if n != len(buffer32) {
+							panic(fmt.Errorf("not all bytes read: %d", n))
+						}
+						value := uint32(0)
+						for k := 0; k < 4; k++ {
+							value <<= 8
+							value |= uint32(buffer32[3-k])
+						}
+						cov[i][ii][iii] = math.Float32frombits(value)
+					}
 				}
 			}
 		}
