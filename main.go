@@ -446,7 +446,7 @@ func main() {
 				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("A"), set.Get("AI"))))
 
 				points := make(plotter.XYs, 0, 8)
-				for i := range 16 * 1024 {
+				for i := range 32 * 1024 {
 					pow := func(x float64) float32 {
 						y := math.Pow(x, float64(i+1))
 						if math.IsNaN(y) || math.IsInf(y, 0) {
