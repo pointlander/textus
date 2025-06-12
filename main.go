@@ -279,6 +279,31 @@ func main() {
 			}
 		}
 
+		out, err := os.Create("model.bin")
+		if err != nil {
+			panic(err)
+		}
+		defer out.Close()
+
+		{
+			buffer32 := make([]byte, 4)
+			for i := range avg {
+				for ii := range avg[i] {
+					bits := math.Float32bits(avg[i][ii])
+					for i := range buffer32 {
+						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					}
+					n, err := out.Write(buffer32)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic("4 bytes should be been written")
+					}
+				}
+			}
+		}
+
 		rng := rand.New(rand.NewSource(1))
 		for s := range avg {
 			size := 256
@@ -399,6 +424,23 @@ func main() {
 					panic(err)
 				}
 			}
+			{
+				buffer32 := make([]byte, 4)
+				a := set.ByName["A"]
+				for i := range a.X {
+					bits := math.Float32bits(a.X[i])
+					for i := range buffer32 {
+						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					}
+					n, err := out.Write(buffer32)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic("4 bytes should be been written")
+					}
+				}
+			}
 
 			{
 				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("A"), set.Get("AI"))))
@@ -473,7 +515,23 @@ func main() {
 					panic(err)
 				}
 			}
-
+			{
+				buffer32 := make([]byte, 4)
+				ai := set.ByName["AI"]
+				for i := range ai.X {
+					bits := math.Float32bits(ai.X[i])
+					for i := range buffer32 {
+						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					}
+					n, err := out.Write(buffer32)
+					if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic("4 bytes should be been written")
+					}
+				}
+			}
 		}
 	}
 }
