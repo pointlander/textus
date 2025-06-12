@@ -533,5 +533,106 @@ func main() {
 				}
 			}
 		}
+		return
 	}
+
+	input, err := os.Open("model.bin")
+	if err != nil {
+		panic(err)
+	}
+	defer input.Close()
+
+	avg, a, ai := make([]Matrix, size), make([]Matrix, size), make([]Matrix, size)
+	for i := range size {
+		avg[i] = NewMatrix(256, 1)
+		a[i] = NewMatrix(256, 256)
+		ai[i] = NewMatrix(256, 256)
+	}
+	{
+		buffer32 := make([]byte, 4)
+		for i := range avg {
+			for range avg[i].Rows {
+				for range avg[i].Cols {
+					n, err := input.Read(buffer32)
+					if err == io.EOF {
+						panic(err)
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic(fmt.Errorf("not all bytes read: %d", n))
+					}
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer32[3-k])
+					}
+					avg[i].Data = append(avg[i].Data, math.Float32frombits(value))
+				}
+			}
+		}
+	}
+	{
+		buffer32 := make([]byte, 4)
+		for i := range a {
+			for range a[i].Rows {
+				for range a[i].Cols {
+					n, err := input.Read(buffer32)
+					if err == io.EOF {
+						panic(err)
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic(fmt.Errorf("not all bytes read: %d", n))
+					}
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer32[3-k])
+					}
+					a[i].Data = append(a[i].Data, math.Float32frombits(value))
+				}
+			}
+			for range ai[i].Rows {
+				for range ai[i].Cols {
+					n, err := input.Read(buffer32)
+					if err == io.EOF {
+						panic(err)
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer32) {
+						panic(fmt.Errorf("not all bytes read: %d", n))
+					}
+					value := uint32(0)
+					for k := 0; k < 4; k++ {
+						value <<= 8
+						value |= uint32(buffer32[3-k])
+					}
+					ai[i].Data = append(ai[i].Data, math.Float32frombits(value))
+				}
+			}
+		}
+		_, err := input.Read(buffer32)
+		if err != io.EOF {
+			panic("not at the end")
+		}
+	}
+	count, total := 0.0, 0.0
+	for i := range a {
+		x := a[i].MulT(ai[i])
+		for ii := range x.Rows {
+			for iii := range x.Cols {
+				if ii == iii {
+					value := x.Data[ii*x.Cols+iii]
+					if value < .9 {
+						count++
+					}
+					total++
+				}
+			}
+		}
+	}
+	fmt.Println(count, total, count/total)
 }
