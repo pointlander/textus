@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pointlander/gradient/tf32"
+	"github.com/pointlander/gradient/tf64"
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
@@ -76,7 +76,7 @@ var (
 	FlagMach4 = flag.Bool("mach4", false, "mach 4 model")
 )
 
-func dot(a, b *[InputSize]float32) float64 {
+func dot(a *[InputSize]float32, b []float32) float64 {
 	sum := 0.0
 	for i, v := range a {
 		sum += float64(v) * float64(b[i])
@@ -130,21 +130,21 @@ func main() {
 		}
 	}
 	length := len(forward)
-	const size = 256
+	size := length
 
 	if *FlagBuild {
 		const fileName = "statistics.bin"
 		_, err := os.Stat(fileName)
-		counts := make([]float32, length)
-		avg := make([][]float32, length)
+		counts := make([]float64, length)
+		avg := make([][]float64, length)
 		for i := range avg {
-			avg[i] = make([]float32, size)
+			avg[i] = make([]float64, size)
 		}
-		cov := make([][][]float32, length)
+		cov := make([][][]float64, length)
 		for i := range cov {
-			cov[i] = make([][]float32, size)
+			cov[i] = make([][]float64, size)
 			for ii := range cov[i] {
-				cov[i][ii] = make([]float32, size)
+				cov[i][ii] = make([]float64, size)
 			}
 		}
 		if errors.Is(err, os.ErrNotExist) {
@@ -154,14 +154,14 @@ func main() {
 			}
 			defer out.Close()
 
-			m := NewFiltered()
+			m := NewMixer(size)
 			m.Add(0)
 			symbols := []rune(string(data))
 			for _, symbol := range symbols {
 				vector, code := m.Mix(), forward[symbol]
 				counts[code]++
 				for i, value := range vector {
-					avg[code][i] += value
+					avg[code][i] += float64(value)
 				}
 				m.Add(code)
 			}
@@ -175,21 +175,21 @@ func main() {
 				}
 			}
 
-			m = NewFiltered()
+			m = NewMixer(size)
 			m.Add(0)
-			cov := make([][][]float32, length)
+			cov := make([][][]float64, length)
 			for i := range cov {
-				cov[i] = make([][]float32, size)
+				cov[i] = make([][]float64, size)
 				for ii := range cov[i] {
-					cov[i][ii] = make([]float32, size)
+					cov[i][ii] = make([]float64, size)
 				}
 			}
 			for _, symbol := range symbols {
 				vector, code := m.Mix(), forward[symbol]
 				for i, a := range vector {
-					diff1 := avg[code][i] - a
+					diff1 := avg[code][i] - float64(a)
 					for ii, b := range vector {
-						diff2 := avg[code][ii] - b
+						diff2 := avg[code][ii] - float64(b)
 						cov[code][i][ii] += diff1 * diff2
 					}
 				}
@@ -207,35 +207,35 @@ func main() {
 				}
 			}
 
-			buffer32 := make([]byte, 4)
+			buffer64 := make([]byte, 8)
 			for i := range avg {
 				for ii := range avg[i] {
-					bits := math.Float32bits(avg[i][ii])
-					for i := range buffer32 {
-						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					bits := math.Float64bits(avg[i][ii])
+					for i := range buffer64 {
+						buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
 					}
-					n, err := out.Write(buffer32)
+					n, err := out.Write(buffer64)
 					if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
-						panic("4 bytes should be been written")
+					if n != len(buffer64) {
+						panic("8 bytes should be been written")
 					}
 				}
 			}
 			for i := range cov {
 				for ii := range cov[i] {
 					for iii := range cov[i][ii] {
-						bits := math.Float32bits(cov[i][ii][iii])
-						for i := range buffer32 {
-							buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+						bits := math.Float64bits(cov[i][ii][iii])
+						for i := range buffer64 {
+							buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
 						}
-						n, err := out.Write(buffer32)
+						n, err := out.Write(buffer64)
 						if err != nil {
 							panic(err)
 						}
-						if n != len(buffer32) {
-							panic("4 bytes should be been written")
+						if n != len(buffer64) {
+							panic("8 bytes should be been written")
 						}
 					}
 				}
@@ -247,44 +247,44 @@ func main() {
 			}
 			defer input.Close()
 
-			buffer32 := make([]byte, 4)
+			buffer64 := make([]byte, 8)
 			for i := range avg {
 				for ii := range avg[i] {
-					n, err := input.Read(buffer32)
+					n, err := input.Read(buffer64)
 					if err == io.EOF {
 						panic(err)
 					} else if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
+					if n != len(buffer64) {
 						panic(fmt.Errorf("not all bytes read: %d", n))
 					}
-					value := uint32(0)
-					for k := 0; k < 4; k++ {
+					value := uint64(0)
+					for k := 0; k < 8; k++ {
 						value <<= 8
-						value |= uint32(buffer32[3-k])
+						value |= uint64(buffer64[7-k])
 					}
-					avg[i][ii] = math.Float32frombits(value)
+					avg[i][ii] = math.Float64frombits(value)
 				}
 			}
 			for i := range cov {
 				for ii := range cov[i] {
 					for iii := range cov[i][ii] {
-						n, err := input.Read(buffer32)
+						n, err := input.Read(buffer64)
 						if err == io.EOF {
 							panic(err)
 						} else if err != nil {
 							panic(err)
 						}
-						if n != len(buffer32) {
+						if n != len(buffer64) {
 							panic(fmt.Errorf("not all bytes read: %d", n))
 						}
-						value := uint32(0)
-						for k := 0; k < 4; k++ {
+						value := uint64(0)
+						for k := 0; k < 8; k++ {
 							value <<= 8
-							value |= uint32(buffer32[3-k])
+							value |= uint64(buffer64[7-k])
 						}
-						cov[i][ii][iii] = math.Float32frombits(value)
+						cov[i][ii][iii] = math.Float64frombits(value)
 					}
 				}
 			}
@@ -297,19 +297,19 @@ func main() {
 		defer out.Close()
 
 		{
-			buffer32 := make([]byte, 4)
+			buffer64 := make([]byte, 8)
 			for i := range avg {
 				for ii := range avg[i] {
-					bits := math.Float32bits(avg[i][ii])
-					for i := range buffer32 {
-						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					bits := math.Float64bits(avg[i][ii])
+					for i := range buffer64 {
+						buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
 					}
-					n, err := out.Write(buffer32)
+					n, err := out.Write(buffer64)
 					if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
-						panic("4 bytes should be been written")
+					if n != len(buffer64) {
+						panic("8 bytes should be been written")
 					}
 				}
 			}
@@ -317,7 +317,7 @@ func main() {
 
 		rng := rand.New(rand.NewSource(1))
 		for s := range avg {
-			set := tf32.NewSet()
+			set := tf64.NewSet()
 			set.Add("A", size, size)
 			set.Add("AI", size, size)
 
@@ -325,23 +325,23 @@ func main() {
 				w := set.Weights[i]
 				if strings.HasPrefix(w.N, "b") {
 					w.X = w.X[:cap(w.X)]
-					w.States = make([][]float32, StateTotal)
+					w.States = make([][]float64, StateTotal)
 					for ii := range w.States {
-						w.States[ii] = make([]float32, len(w.X))
+						w.States[ii] = make([]float64, len(w.X))
 					}
 					continue
 				}
 				factor := math.Sqrt(2.0 / float64(w.S[0]))
 				for range cap(w.X) {
-					w.X = append(w.X, float32(rng.NormFloat64()*factor))
+					w.X = append(w.X, rng.NormFloat64()*factor)
 				}
-				w.States = make([][]float32, StateTotal)
+				w.States = make([][]float64, StateTotal)
 				for ii := range w.States {
-					w.States[ii] = make([]float32, len(w.X))
+					w.States[ii] = make([]float64, len(w.X))
 				}
 			}
 
-			others := tf32.NewSet()
+			others := tf64.NewSet()
 			others.Add("E", size, size)
 			others.Add("I", size, size)
 			E := others.ByName["E"]
@@ -362,22 +362,22 @@ func main() {
 			}
 
 			{
-				loss := tf32.Sum(tf32.Quadratic(others.Get("E"), tf32.Mul(set.Get("A"), set.Get("A"))))
+				loss := tf64.Sum(tf64.Quadratic(others.Get("E"), tf64.Mul(set.Get("A"), set.Get("A"))))
 
 				points := make(plotter.XYs, 0, 8)
 				for i := range 1024 {
-					pow := func(x float64) float32 {
+					pow := func(x float64) float64 {
 						y := math.Pow(x, float64(i+1))
 						if math.IsNaN(y) || math.IsInf(y, 0) {
 							return 0
 						}
-						return float32(y)
+						return y
 					}
 
 					set.Zero()
 					others.Zero()
-					cost := tf32.Gradient(loss).X[0]
-					if math.IsNaN(float64(cost)) || math.IsInf(float64(cost), 0) {
+					cost := tf64.Gradient(loss).X[0]
+					if math.IsNaN(cost) || math.IsInf(cost, 0) {
 						fmt.Println(i, cost)
 						break
 					}
@@ -385,7 +385,7 @@ func main() {
 					norm := 0.0
 					for _, p := range set.Weights {
 						for _, d := range p.D {
-							norm += float64(d * d)
+							norm += d * d
 						}
 					}
 					norm = math.Sqrt(norm)
@@ -399,7 +399,7 @@ func main() {
 							continue
 						}
 						for ii, d := range w.D {
-							g := d * float32(scaling)
+							g := d * scaling
 							m := B1*w.States[StateM][ii] + (1-B1)*g
 							v := B2*w.States[StateV][ii] + (1-B2)*g*g
 							w.States[StateM][ii] = m
@@ -409,10 +409,10 @@ func main() {
 							if vhat < 0 {
 								vhat = 0
 							}
-							w.X[ii] -= Eta * mhat / (float32(math.Sqrt(float64(vhat))) + 1e-8)
+							w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
 						}
 					}
-					points = append(points, plotter.XY{X: float64(i), Y: float64(cost)})
+					points = append(points, plotter.XY{X: float64(i), Y: cost})
 				}
 
 				p := plot.New()
@@ -435,48 +435,52 @@ func main() {
 				}
 			}
 			{
-				buffer32 := make([]byte, 4)
+				buffer64 := make([]byte, 8)
 				a := set.ByName["A"]
 				for i := range a.X {
-					bits := math.Float32bits(a.X[i])
-					for i := range buffer32 {
-						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					bits := math.Float64bits(a.X[i])
+					for i := range buffer64 {
+						buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
 					}
-					n, err := out.Write(buffer32)
+					n, err := out.Write(buffer64)
 					if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
-						panic("4 bytes should be been written")
+					if n != len(buffer64) {
+						panic("8 bytes should be been written")
 					}
 				}
 			}
 
 			{
-				loss := tf32.Sum(tf32.Quadratic(others.Get("I"), tf32.Mul(set.Get("A"), set.Get("AI"))))
+				const Eta = 1.0e-1
+				loss := tf64.Sum(tf64.Quadratic(others.Get("I"), tf64.Mul(set.Get("A"), set.Get("AI"))))
 
 				points := make(plotter.XYs, 0, 8)
-				for i := range 32 * 1024 {
-					pow := func(x float64) float32 {
+				for i := range 128 * 1024 {
+					pow := func(x float64) float64 {
 						y := math.Pow(x, float64(i+1))
 						if math.IsNaN(y) || math.IsInf(y, 0) {
 							return 0
 						}
-						return float32(y)
+						return y
 					}
 
 					set.Zero()
 					others.Zero()
-					cost := tf32.Gradient(loss).X[0]
-					if math.IsNaN(float64(cost)) || math.IsInf(float64(cost), 0) {
+					cost := tf64.Gradient(loss).X[0]
+					if math.IsNaN(cost) || math.IsInf(cost, 0) {
 						fmt.Println(i, cost)
 						break
 					}
 
 					norm := 0.0
 					for _, p := range set.Weights {
+						if p.N != "AI" {
+							continue
+						}
 						for _, d := range p.D {
-							norm += float64(d * d)
+							norm += d * d
 						}
 					}
 					norm = math.Sqrt(norm)
@@ -490,7 +494,7 @@ func main() {
 							continue
 						}
 						for ii, d := range w.D {
-							g := d * float32(scaling)
+							g := d * scaling
 							m := B1*w.States[StateM][ii] + (1-B1)*g
 							v := B2*w.States[StateV][ii] + (1-B2)*g*g
 							w.States[StateM][ii] = m
@@ -500,10 +504,10 @@ func main() {
 							if vhat < 0 {
 								vhat = 0
 							}
-							w.X[ii] -= Eta * mhat / (float32(math.Sqrt(float64(vhat))) + 1e-8)
+							w.X[ii] -= Eta * mhat / (math.Sqrt(vhat) + 1e-8)
 						}
 					}
-					points = append(points, plotter.XY{X: float64(i), Y: float64(cost)})
+					points = append(points, plotter.XY{X: float64(i), Y: cost})
 				}
 
 				p := plot.New()
@@ -526,19 +530,19 @@ func main() {
 				}
 			}
 			{
-				buffer32 := make([]byte, 4)
+				buffer64 := make([]byte, 8)
 				ai := set.ByName["AI"]
 				for i := range ai.X {
-					bits := math.Float32bits(ai.X[i])
-					for i := range buffer32 {
-						buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+					bits := math.Float64bits(ai.X[i])
+					for i := range buffer64 {
+						buffer64[i] = byte((bits >> (8 * i)) & 0xFF)
 					}
-					n, err := out.Write(buffer32)
+					n, err := out.Write(buffer64)
 					if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
-						panic("4 bytes should be been written")
+					if n != len(buffer64) {
+						panic("8 bytes should be been written")
 					}
 				}
 			}
@@ -559,72 +563,72 @@ func main() {
 		ai[i] = NewMatrix(size, size)
 	}
 	{
-		buffer32 := make([]byte, 4)
+		buffer64 := make([]byte, 8)
 		for i := range avg {
 			for range avg[i].Rows {
 				for range avg[i].Cols {
-					n, err := input.Read(buffer32)
+					n, err := input.Read(buffer64)
 					if err == io.EOF {
 						panic(err)
 					} else if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
+					if n != len(buffer64) {
 						panic(fmt.Errorf("not all bytes read: %d", n))
 					}
-					value := uint32(0)
-					for k := 0; k < 4; k++ {
+					value := uint64(0)
+					for k := 0; k < 8; k++ {
 						value <<= 8
-						value |= uint32(buffer32[3-k])
+						value |= uint64(buffer64[7-k])
 					}
-					avg[i].Data = append(avg[i].Data, math.Float32frombits(value))
+					avg[i].Data = append(avg[i].Data, float32(math.Float64frombits(value)))
 				}
 			}
 		}
 	}
 	{
-		buffer32 := make([]byte, 4)
+		buffer64 := make([]byte, 8)
 		for i := range a {
 			for range a[i].Rows {
 				for range a[i].Cols {
-					n, err := input.Read(buffer32)
+					n, err := input.Read(buffer64)
 					if err == io.EOF {
 						panic(err)
 					} else if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
+					if n != len(buffer64) {
 						panic(fmt.Errorf("not all bytes read: %d", n))
 					}
-					value := uint32(0)
-					for k := 0; k < 4; k++ {
+					value := uint64(0)
+					for k := 0; k < 8; k++ {
 						value <<= 8
-						value |= uint32(buffer32[3-k])
+						value |= uint64(buffer64[7-k])
 					}
-					a[i].Data = append(a[i].Data, math.Float32frombits(value))
+					a[i].Data = append(a[i].Data, float32(math.Float64frombits(value)))
 				}
 			}
 			for range ai[i].Rows {
 				for range ai[i].Cols {
-					n, err := input.Read(buffer32)
+					n, err := input.Read(buffer64)
 					if err == io.EOF {
 						panic(err)
 					} else if err != nil {
 						panic(err)
 					}
-					if n != len(buffer32) {
+					if n != len(buffer64) {
 						panic(fmt.Errorf("not all bytes read: %d", n))
 					}
-					value := uint32(0)
-					for k := 0; k < 4; k++ {
+					value := uint64(0)
+					for k := 0; k < 8; k++ {
 						value <<= 8
-						value |= uint32(buffer32[3-k])
+						value |= uint64(buffer64[7-k])
 					}
-					ai[i].Data = append(ai[i].Data, math.Float32frombits(value))
+					ai[i].Data = append(ai[i].Data, float32(math.Float64frombits(value)))
 				}
 			}
 		}
-		_, err := input.Read(buffer32)
+		_, err := input.Read(buffer64)
 		if err != io.EOF {
 			panic("not at the end")
 		}

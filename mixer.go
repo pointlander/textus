@@ -28,7 +28,7 @@ const (
 type Mix interface {
 	Copy() Mix
 	Add(byte)
-	Mix() [InputSize]float32
+	Mix() []float32
 }
 
 // Mix is a mixer
@@ -146,16 +146,17 @@ type Markov [Order + 1]byte
 
 // Histogram is a buffered histogram
 type Histogram struct {
-	Vector [256]byte
+	Vector []byte
 	Buffer [128]byte
 	Index  int
 	Size   int
 }
 
 // NewHistogram make a new histogram
-func NewHistogram(size int) Histogram {
+func NewHistogram(size, length int) Histogram {
 	h := Histogram{
-		Size: size,
+		Vector: make([]byte, length),
+		Size:   size,
 	}
 	return h
 }
@@ -213,7 +214,7 @@ func (f Filtered) Add(s byte) {
 }
 
 // Mix mixes the filters outputting a matrix
-func (f Filtered) Mix() [InputSize]float32 {
+func (f Filtered) Mix() []float32 {
 	x := NewMatrix(256, Size+Order+1)
 	for i := range f.Filters {
 		model := f.Filters[i].GetModel()
@@ -240,21 +241,23 @@ func (f Filtered) Mix() [InputSize]float32 {
 type Mixer struct {
 	Markov     Markov
 	Histograms []Histogram
+	Length     int
 }
 
 // NewMixer makes a new mixer
-func NewMixer() *Mixer {
+func NewMixer(length int) *Mixer {
 	histograms := make([]Histogram, Size)
-	histograms[0] = NewHistogram(1)
-	histograms[1] = NewHistogram(2)
-	histograms[2] = NewHistogram(4)
-	histograms[3] = NewHistogram(8)
-	histograms[4] = NewHistogram(16)
-	histograms[5] = NewHistogram(32)
-	histograms[6] = NewHistogram(64)
-	histograms[7] = NewHistogram(128)
+	histograms[0] = NewHistogram(1, length)
+	histograms[1] = NewHistogram(2, length)
+	histograms[2] = NewHistogram(4, length)
+	histograms[3] = NewHistogram(8, length)
+	histograms[4] = NewHistogram(16, length)
+	histograms[5] = NewHistogram(32, length)
+	histograms[6] = NewHistogram(64, length)
+	histograms[7] = NewHistogram(128, length)
 	return &Mixer{
 		Histograms: histograms,
+		Length:     length,
 	}
 }
 
@@ -262,6 +265,8 @@ func (m Mixer) Copy() Mix {
 	histograms := make([]Histogram, Size)
 	for i := range m.Histograms {
 		histograms[i] = m.Histograms[i]
+		histograms[i].Vector = make([]byte, len(m.Histograms[i].Vector))
+		copy(histograms[i].Vector, m.Histograms[i].Vector)
 	}
 	return &Mixer{
 		Markov:     m.Markov,
@@ -281,21 +286,20 @@ func (m *Mixer) Add(s byte) {
 }
 
 // Mix mixes the histograms outputting a matrix
-func (m Mixer) Mix() [InputSize]float32 {
-	x := NewMatrix(256, Size+Order+1)
+func (m Mixer) Mix() []float32 {
+	x := NewMatrix(m.Length, Size)
 	for i := range m.Histograms {
 		sum := float32(0.0)
 		for _, v := range m.Histograms[i].Vector {
 			sum += float32(v)
 		}
 		for _, v := range m.Histograms[i].Vector {
+			if sum == 0.0 {
+				x.Data = append(x.Data, 0.0)
+				continue
+			}
 			x.Data = append(x.Data, float32(v)/sum)
 		}
-	}
-	for _, v := range m.Markov {
-		d := make([]float32, 256)
-		d[v] = 1
-		x.Data = append(x.Data, d...)
 	}
 	return SelfAttention(x)
 }
