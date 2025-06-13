@@ -247,7 +247,7 @@ func main() {
 			}
 			defer input.Close()
 
-			buffer64 := make([]byte, 64)
+			buffer64 := make([]byte, 8)
 			for i := range avg {
 				for ii := range avg[i] {
 					n, err := input.Read(buffer64)
@@ -453,10 +453,11 @@ func main() {
 			}
 
 			{
+				const Eta = 1.0e-1
 				loss := tf64.Sum(tf64.Quadratic(others.Get("I"), tf64.Mul(set.Get("A"), set.Get("AI"))))
 
 				points := make(plotter.XYs, 0, 8)
-				for i := range 32 * 1024 {
+				for i := range 128 * 1024 {
 					pow := func(x float64) float64 {
 						y := math.Pow(x, float64(i+1))
 						if math.IsNaN(y) || math.IsInf(y, 0) {
@@ -475,6 +476,9 @@ func main() {
 
 					norm := 0.0
 					for _, p := range set.Weights {
+						if p.N != "AI" {
+							continue
+						}
 						for _, d := range p.D {
 							norm += d * d
 						}
