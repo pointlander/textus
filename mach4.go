@@ -119,8 +119,8 @@ func Mach4() {
 			Rank   float64
 		}
 
-		var search func(rng *rand.Rand, current [InputSize]float32) (float64, byte)
-		search = func(rng *rand.Rand, current [InputSize]float32) (float64, byte) {
+		var search func(rng *rand.Rand, current []float32) (float64, byte)
+		search = func(rng *rand.Rand, current []float32) (float64, byte) {
 			results := make(chan [10]Result, 8)
 			for i := range cpus {
 				begin, end := i*count, (i+1)*count
@@ -131,7 +131,7 @@ func Mach4() {
 					items := items[begin:end]
 					var result [10]Result
 					for x := range items {
-						j, a := 0, dot(&items[x].Vector, &current)
+						j, a := 0, dot(&items[x].Vector, current)
 						for j < len(result) && a > result[j].Max {
 							if j > 0 {
 								result[j-1] = result[j]
@@ -158,7 +158,7 @@ func Mach4() {
 			graph := pagerank.NewGraph()
 			for i := 0; i < len(combine); i++ {
 				for j := 0; j < len(combine); j++ {
-					p := dot(&combine[i].Vector, &combine[j].Vector)
+					p := dot(&combine[i].Vector, combine[j].Vector[:])
 					graph.Link(uint32(i), uint32(j), p)
 				}
 			}

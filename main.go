@@ -76,7 +76,7 @@ var (
 	FlagMach4 = flag.Bool("mach4", false, "mach 4 model")
 )
 
-func dot(a, b *[InputSize]float32) float64 {
+func dot(a *[InputSize]float32, b []float32) float64 {
 	sum := 0.0
 	for i, v := range a {
 		sum += float64(v) * float64(b[i])
@@ -130,7 +130,7 @@ func main() {
 		}
 	}
 	length := len(forward)
-	const size = 256
+	size := length
 
 	if *FlagBuild {
 		const fileName = "statistics.bin"
@@ -154,7 +154,7 @@ func main() {
 			}
 			defer out.Close()
 
-			m := NewFiltered()
+			m := NewMixer(size)
 			m.Add(0)
 			symbols := []rune(string(data))
 			for _, symbol := range symbols {
@@ -175,7 +175,7 @@ func main() {
 				}
 			}
 
-			m = NewFiltered()
+			m = NewMixer(size)
 			m.Add(0)
 			cov := make([][][]float64, length)
 			for i := range cov {
