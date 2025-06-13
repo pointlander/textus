@@ -170,7 +170,7 @@ func softmax(values []float32) {
 func SelfAttention(input Matrix) []float32 {
 	values := make([]float32, input.Rows)
 	V := input.T()
-	output := make([]float32, input.Rows)
+	output := make([]float32, input.Cols)
 	for i := 0; i < input.Rows; i++ {
 		K := input.Data[i*input.Cols : (i+1)*input.Cols]
 		for j := 0; j < input.Rows; j++ {
