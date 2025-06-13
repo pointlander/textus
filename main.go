@@ -129,20 +129,22 @@ func main() {
 			}
 		}
 	}
-	size := len(forward)
+	length := len(forward)
+	const size = 256
 
 	if *FlagBuild {
 		const fileName = "statistics.bin"
 		_, err := os.Stat(fileName)
-		avg := make([][]float32, size)
+		counts := make([]float32, length)
+		avg := make([][]float32, length)
 		for i := range avg {
-			avg[i] = make([]float32, 256)
+			avg[i] = make([]float32, size)
 		}
-		cov := make([][][]float32, size)
+		cov := make([][][]float32, length)
 		for i := range cov {
-			cov[i] = make([][]float32, 256)
+			cov[i] = make([][]float32, size)
 			for ii := range cov[i] {
-				cov[i][ii] = make([]float32, 256)
+				cov[i][ii] = make([]float32, size)
 			}
 		}
 		if errors.Is(err, os.ErrNotExist) {
@@ -157,24 +159,29 @@ func main() {
 			symbols := []rune(string(data))
 			for _, symbol := range symbols {
 				vector, code := m.Mix(), forward[symbol]
+				counts[code]++
 				for i, value := range vector {
 					avg[code][i] += value
 				}
 				m.Add(code)
 			}
 			for i := range avg {
+				c := counts[i]
+				if c == 0 {
+					continue
+				}
 				for ii := range avg[i] {
-					avg[i][ii] /= float32(len(symbols))
+					avg[i][ii] /= c
 				}
 			}
 
 			m = NewFiltered()
 			m.Add(0)
-			cov := make([][][]float32, size)
+			cov := make([][][]float32, length)
 			for i := range cov {
-				cov[i] = make([][]float32, 256)
+				cov[i] = make([][]float32, size)
 				for ii := range cov[i] {
-					cov[i][ii] = make([]float32, 256)
+					cov[i][ii] = make([]float32, size)
 				}
 			}
 			for _, symbol := range symbols {
@@ -189,9 +196,13 @@ func main() {
 				m.Add(code)
 			}
 			for i := range cov {
+				c := counts[i]
+				if c == 0 {
+					continue
+				}
 				for ii := range cov[i] {
 					for iii := range cov[i][ii] {
-						cov[i][ii][iii] = cov[i][ii][ii] / float32(len(symbols))
+						cov[i][ii][iii] = cov[i][ii][ii] / c
 					}
 				}
 			}
@@ -306,7 +317,6 @@ func main() {
 
 		rng := rand.New(rand.NewSource(1))
 		for s := range avg {
-			size := 256
 			set := tf32.NewSet()
 			set.Add("A", size, size)
 			set.Add("AI", size, size)
@@ -542,11 +552,11 @@ func main() {
 	}
 	defer input.Close()
 
-	avg, a, ai := make([]Matrix, size), make([]Matrix, size), make([]Matrix, size)
-	for i := range size {
-		avg[i] = NewMatrix(256, 1)
-		a[i] = NewMatrix(256, 256)
-		ai[i] = NewMatrix(256, 256)
+	avg, a, ai := make([]Matrix, length), make([]Matrix, length), make([]Matrix, length)
+	for i := range length {
+		avg[i] = NewMatrix(size, 1)
+		a[i] = NewMatrix(size, size)
+		ai[i] = NewMatrix(size, size)
 	}
 	{
 		buffer32 := make([]byte, 4)
