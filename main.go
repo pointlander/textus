@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/pointlander/gradient/tf64"
+	"github.com/pointlander/textus/mat64"
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
@@ -154,14 +155,14 @@ func main() {
 			}
 			defer out.Close()
 
-			m := NewMixer(size)
+			m := mat64.NewMixer(size)
 			m.Add(0)
 			symbols := []rune(string(data))
 			for _, symbol := range symbols {
 				vector, code := m.Mix(), forward[symbol]
 				counts[code]++
 				for i, value := range vector {
-					avg[code][i] += float64(value)
+					avg[code][i] += value
 				}
 				m.Add(code)
 			}
@@ -175,7 +176,7 @@ func main() {
 				}
 			}
 
-			m = NewMixer(size)
+			m = mat64.NewMixer(size)
 			m.Add(0)
 			cov := make([][][]float64, length)
 			for i := range cov {
@@ -187,9 +188,9 @@ func main() {
 			for _, symbol := range symbols {
 				vector, code := m.Mix(), forward[symbol]
 				for i, a := range vector {
-					diff1 := avg[code][i] - float64(a)
+					diff1 := avg[code][i] - a
 					for ii, b := range vector {
-						diff2 := avg[code][ii] - float64(b)
+						diff2 := avg[code][ii] - b
 						cov[code][i][ii] += diff1 * diff2
 					}
 				}
@@ -556,11 +557,11 @@ func main() {
 	}
 	defer input.Close()
 
-	avg, a, ai := make([]Matrix, length), make([]Matrix, length), make([]Matrix, length)
+	avg, a, ai := make([]mat64.Matrix, length), make([]mat64.Matrix, length), make([]mat64.Matrix, length)
 	for i := range length {
-		avg[i] = NewMatrix(size, 1)
-		a[i] = NewMatrix(size, size)
-		ai[i] = NewMatrix(size, size)
+		avg[i] = mat64.NewMatrix(size, 1)
+		a[i] = mat64.NewMatrix(size, size)
+		ai[i] = mat64.NewMatrix(size, size)
 	}
 	{
 		buffer64 := make([]byte, 8)
@@ -581,7 +582,7 @@ func main() {
 						value <<= 8
 						value |= uint64(buffer64[7-k])
 					}
-					avg[i].Data = append(avg[i].Data, float32(math.Float64frombits(value)))
+					avg[i].Data = append(avg[i].Data, math.Float64frombits(value))
 				}
 			}
 		}
@@ -605,7 +606,7 @@ func main() {
 						value <<= 8
 						value |= uint64(buffer64[7-k])
 					}
-					a[i].Data = append(a[i].Data, float32(math.Float64frombits(value)))
+					a[i].Data = append(a[i].Data, math.Float64frombits(value))
 				}
 			}
 			for range ai[i].Rows {
@@ -624,7 +625,7 @@ func main() {
 						value <<= 8
 						value |= uint64(buffer64[7-k])
 					}
-					ai[i].Data = append(ai[i].Data, float32(math.Float64frombits(value)))
+					ai[i].Data = append(ai[i].Data, math.Float64frombits(value))
 				}
 			}
 		}
