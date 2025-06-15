@@ -674,8 +674,8 @@ func main() {
 	sample := ""
 	for range 33 {
 		histogram := make([]int, length)
+		vector := mat64.NewMatrix(size, 1, m.Mix()...)
 		for i := 0; i < 33; i++ {
-			vector := mat64.NewMatrix(size, 1, m.Mix()...)
 			min, index := math.MaxFloat64, 0
 			for ii := range length {
 				reverse := ai[ii].T().MulT(vector.Sub(avg[ii]))
