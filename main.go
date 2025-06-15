@@ -85,6 +85,16 @@ func dot(a *[InputSize]float32, b []float32) float64 {
 	return sum
 }
 
+// L2 is the L2 norm
+func L2(a, b []float64) float64 {
+	c := 0.0
+	for i, v := range a {
+		diff := v - b[i]
+		c += diff * diff
+	}
+	return c
+}
+
 func main() {
 	flag.Parse()
 
@@ -650,4 +660,48 @@ func main() {
 		}
 	}
 	fmt.Println(count, total, count/total)
+
+	rng := rand.New(rand.NewSource(1))
+
+	m := mat64.NewMixer(size)
+	m.Add(0)
+	symbols := []rune("What is the meaning of life?")
+	for _, symbol := range symbols {
+		code := forward[symbol]
+		m.Add(code)
+	}
+
+	sample := ""
+	for range 33 {
+		histogram := make([]int, length)
+		for i := 0; i < 33; i++ {
+			vector := mat64.NewMatrix(size, 1, m.Mix()...)
+			min, index := math.MaxFloat64, 0
+			for ii := range length {
+				reverse := ai[ii].T().MulT(vector.Sub(avg[ii]))
+				for iii := range reverse.Data {
+					reverse.Data[iii] *= rng.NormFloat64()
+				}
+				forward := a[ii].MulT(reverse).Add(avg[ii])
+				fitness := L2(vector.Data, forward.Data)
+				if fitness < min {
+					min, index = fitness, ii
+				}
+			}
+			histogram[index]++
+		}
+		fmt.Println(histogram)
+		index, sum, target := 0, 0, rng.Intn(16)
+		for i, v := range histogram {
+			sum += v
+			if target < sum {
+				index = i
+				break
+			}
+		}
+		fmt.Printf("'%c' %d\n", reverse[byte(index)], reverse[byte(index)])
+		sample += fmt.Sprintf("%c", reverse[byte(index)])
+		m.Add(byte(index))
+	}
+	fmt.Println(sample)
 }
