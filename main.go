@@ -714,4 +714,47 @@ func main() {
 		Mach5()
 		return
 	}
+
+	file, err := Data.Open("books/100.txt.utf-8.bz2")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	reader := bzip2.NewReader(file)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		panic(err)
+	}
+
+	forward, reverse, code := make(map[rune]byte), make(map[byte]rune), byte(0)
+	for _, v := range string(data) {
+		if _, ok := forward[v]; !ok {
+			forward[v] = code
+			reverse[code] = v
+			code++
+			if code > 255 {
+				panic("not enough codes")
+			}
+		}
+	}
+
+	type Context [2]byte
+	type Vector struct {
+		Vector []float32
+		Symbol byte
+	}
+	model := make(map[Context][]Vector)
+	m := NewFiltered()
+	m.Add(0)
+	for _, v := range string(data) {
+		vector := m.Mix()
+		context := Context{m.Markov[0], m.Markov[1]}
+		x := model[context]
+		x = append(x, Vector{
+			Vector: vector,
+			Symbol: forward[v],
+		})
+		model[context] = x
+		m.Add(forward[v])
+	}
 }
