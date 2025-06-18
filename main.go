@@ -75,6 +75,8 @@ var (
 	FlagMach3 = flag.Bool("mach3", false, "mach 3 model")
 	// FlagMach4 mach 4 model
 	FlagMach4 = flag.Bool("mach4", false, "mach 4 model")
+	// FlagMach5 mach 5 model
+	FlagMach5 = flag.Bool("mach5", false, "mach 5 model")
 )
 
 func dot(a *[InputSize]float32, b []float32) float64 {
@@ -95,29 +97,8 @@ func L2(a, b []float64) float64 {
 	return c
 }
 
-func main() {
-	flag.Parse()
-
-	if *FlagMach1 {
-		Mach1()
-		return
-	}
-
-	if *FlagMach2 {
-		Mach2()
-		return
-	}
-
-	if *FlagMach3 {
-		Mach3()
-		return
-	}
-
-	if *FlagMach4 {
-		Mach4()
-		return
-	}
-
+// Mach5 is the mach 5 model
+func Mach5() {
 	file, err := Data.Open("books/100.txt.utf-8.bz2")
 	if err != nil {
 		panic(err)
@@ -704,4 +685,33 @@ func main() {
 		m.Add(byte(index))
 	}
 	fmt.Println(sample)
+}
+
+func main() {
+	flag.Parse()
+
+	if *FlagMach1 {
+		Mach1()
+		return
+	}
+
+	if *FlagMach2 {
+		Mach2()
+		return
+	}
+
+	if *FlagMach3 {
+		Mach3()
+		return
+	}
+
+	if *FlagMach4 {
+		Mach4()
+		return
+	}
+
+	if *FlagMach5 {
+		Mach5()
+		return
+	}
 }
