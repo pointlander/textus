@@ -137,6 +137,7 @@ func main() {
 			}
 		}
 	}
+	length := len(forward)
 
 	type Context [2]byte
 	type Vector struct {
@@ -198,5 +199,80 @@ func main() {
 			m.Add(forward[v])
 		}
 		return
+	}
+
+	if *FlagPrompt != "" {
+		m := NewFiltered()
+		txt := []rune(*FlagPrompt)
+		for _, v := range txt {
+			m.Add(forward[v])
+		}
+
+		for range 33 {
+			current := m.Mix()
+			context := Context{m.Markov[0], m.Markov[1]}
+			max, symbol := float32(0.0), byte(0)
+			name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", context[1]))
+			input, err := os.Open(name)
+			if err == nil {
+				buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+				for {
+					n, err := input.Read(buffer[:])
+					if err == io.EOF {
+						break
+					} else if err != nil {
+						panic(err)
+					}
+					if n != len(buffer) {
+						panic("not all bytes read")
+					}
+					for j := range vector {
+						value := uint32(0)
+						for k := 0; k < 4; k++ {
+							value <<= 8
+							value |= uint32(buffer[j*4+3-k])
+						}
+						vector[j] = math.Float32frombits(value)
+					}
+					if a := CS(vector[:], current[:]); a > max {
+						max, symbol = a, buffer[len(buffer)-1]
+					}
+				}
+			} else {
+				for i := range length {
+					name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", i))
+					input, err := os.Open(name)
+					if err == nil {
+						buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+						for {
+							n, err := input.Read(buffer[:])
+							if err == io.EOF {
+								break
+							} else if err != nil {
+								panic(err)
+							}
+							if n != len(buffer) {
+								panic("not all bytes read")
+							}
+							for j := range vector {
+								value := uint32(0)
+								for k := 0; k < 4; k++ {
+									value <<= 8
+									value |= uint32(buffer[j*4+3-k])
+								}
+								vector[j] = math.Float32frombits(value)
+							}
+							if a := CS(vector[:], current[:]); a > max {
+								max, symbol = a, buffer[len(buffer)-1]
+							}
+						}
+					}
+				}
+			}
+			fmt.Printf("%c %d\n", reverse[symbol], reverse[symbol])
+			txt = append(txt, reverse[symbol])
+			m.Add(symbol)
+		}
+		fmt.Println(string(txt))
 	}
 }
