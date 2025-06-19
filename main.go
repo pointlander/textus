@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/pointlander/gradient/tf64"
@@ -743,18 +744,57 @@ func main() {
 		Vector []float32
 		Symbol byte
 	}
-	model := make(map[Context][]Vector)
+	//model := make(map[Context][]Vector)
 	m := NewFiltered()
 	m.Add(0)
+	buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
 	for _, v := range string(data) {
 		vector := m.Mix()
 		context := Context{m.Markov[0], m.Markov[1]}
-		x := model[context]
+		err := os.MkdirAll(path.Join("model", fmt.Sprintf("%d", context[0])), 0750)
+		if err != nil {
+			panic(err)
+		}
+		name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", context[1]))
+		output, err := os.OpenFile(name, os.O_RDWR, 0750)
+		if err != nil {
+			output, err = os.Create(name)
+			if err != nil {
+				panic(err)
+			}
+		}
+		_, err = output.Seek(0, 2)
+		if err != nil {
+			panic(err)
+		}
+		for _, v := range vector {
+			bits := math.Float32bits(v)
+			for i := range buffer32 {
+				buffer32[i] = byte((bits >> (8 * i)) & 0xFF)
+			}
+			n, err := output.Write(buffer32)
+			if err != nil {
+				panic(err)
+			}
+			if n != len(buffer32) {
+				panic("4 bytes should be been written")
+			}
+		}
+		buffer8[0] = forward[v]
+		n, err := output.Write(buffer8)
+		if err != nil {
+			panic(err)
+		}
+		if n != 1 {
+			panic("1 byte should be been written")
+		}
+		/*x := model[context]
 		x = append(x, Vector{
 			Vector: vector,
 			Symbol: forward[v],
 		})
-		model[context] = x
+		model[context] = x*/
+		output.Close()
 		m.Add(forward[v])
 	}
 }

@@ -203,7 +203,7 @@ func (f Filtered) Copy() Mix {
 }
 
 // Add adds a symbol to a filter
-func (f Filtered) Add(s byte) {
+func (f *Filtered) Add(s byte) {
 	for i := range f.Filters {
 		f.Filters[i].Update(uint16(s))
 	}
