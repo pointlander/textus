@@ -219,6 +219,10 @@ func main() {
 				for {
 					n, err := input.Read(buffer[:])
 					if err == io.EOF {
+						err := input.Close()
+						if err != nil {
+							panic(err)
+						}
 						break
 					} else if err != nil {
 						panic(err)
@@ -247,6 +251,10 @@ func main() {
 						for {
 							n, err := input.Read(buffer[:])
 							if err == io.EOF {
+								err := input.Close()
+								if err != nil {
+									panic(err)
+								}
 								break
 							} else if err != nil {
 								panic(err)
@@ -274,5 +282,6 @@ func main() {
 			m.Add(symbol)
 		}
 		fmt.Println(string(txt))
+		return
 	}
 }
