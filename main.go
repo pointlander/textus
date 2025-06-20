@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path"
+	"sort"
 )
 
 // todo
@@ -202,86 +204,125 @@ func main() {
 	}
 
 	if *FlagPrompt != "" {
-		m := NewFiltered()
-		txt := []rune(*FlagPrompt)
-		for _, v := range txt {
-			m.Add(forward[v])
+		rng := rand.New(rand.NewSource(1))
+		type Sample struct {
+			Sample      string
+			Probability float32
 		}
-
+		samples := []Sample{}
+		fmt.Println(*FlagPrompt)
 		for range 33 {
-			current := m.Mix()
-			context := Context{m.Markov[0], m.Markov[1]}
-			max, symbol := float32(0.0), byte(0)
-			name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", context[1]))
-			input, err := os.Open(name)
-			if err == nil {
-				buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-				for {
-					n, err := input.Read(buffer[:])
-					if err == io.EOF {
-						err := input.Close()
-						if err != nil {
-							panic(err)
-						}
-						break
-					} else if err != nil {
-						panic(err)
-					}
-					if n != len(buffer) {
-						panic("not all bytes read")
-					}
-					for j := range vector {
-						value := uint32(0)
-						for k := 0; k < 4; k++ {
-							value <<= 8
-							value |= uint32(buffer[j*4+3-k])
-						}
-						vector[j] = math.Float32frombits(value)
-					}
-					if a := CS(vector[:], current[:]); a > max {
-						max, symbol = a, buffer[len(buffer)-1]
-					}
-				}
-			} else {
-				for i := range length {
-					name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", i))
-					input, err := os.Open(name)
-					if err == nil {
-						buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
-						for {
-							n, err := input.Read(buffer[:])
-							if err == io.EOF {
-								err := input.Close()
-								if err != nil {
-									panic(err)
-								}
-								break
-							} else if err != nil {
+			m := NewFiltered()
+			txt := []rune(*FlagPrompt)
+			for _, v := range txt {
+				m.Add(forward[v])
+			}
+			sample := Sample{}
+			for range 33 {
+				current := m.Mix()
+				context := Context{m.Markov[0], m.Markov[1]}
+				//max, symbol := float32(0.0), byte(0)
+				symbol := byte(0)
+				histogram, count := make([]float32, length), float32(0.0)
+				name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", context[1]))
+				input, err := os.Open(name)
+				if err == nil {
+					buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+					for {
+						n, err := input.Read(buffer[:])
+						if err == io.EOF {
+							err := input.Close()
+							if err != nil {
 								panic(err)
 							}
-							if n != len(buffer) {
-								panic("not all bytes read")
+							break
+						} else if err != nil {
+							panic(err)
+						}
+						if n != len(buffer) {
+							panic("not all bytes read")
+						}
+						for j := range vector {
+							value := uint32(0)
+							for k := 0; k < 4; k++ {
+								value <<= 8
+								value |= uint32(buffer[j*4+3-k])
 							}
-							for j := range vector {
-								value := uint32(0)
-								for k := 0; k < 4; k++ {
-									value <<= 8
-									value |= uint32(buffer[j*4+3-k])
+							vector[j] = math.Float32frombits(value)
+						}
+						a, s := CS(vector[:], current[:]), buffer[len(buffer)-1]
+						/*if a > max {
+							max, symbol = a, s
+						}*/
+						histogram[s] += a
+						count += a
+					}
+				} else {
+					for i := range length {
+						name := path.Join("model", fmt.Sprintf("%d", context[0]), fmt.Sprintf("%d", i))
+						input, err := os.Open(name)
+						if err == nil {
+							buffer, vector := [ItemSize]byte{}, [InputSize]float32{}
+							for {
+								n, err := input.Read(buffer[:])
+								if err == io.EOF {
+									err := input.Close()
+									if err != nil {
+										panic(err)
+									}
+									break
+								} else if err != nil {
+									panic(err)
 								}
-								vector[j] = math.Float32frombits(value)
-							}
-							if a := CS(vector[:], current[:]); a > max {
-								max, symbol = a, buffer[len(buffer)-1]
+								if n != len(buffer) {
+									panic("not all bytes read")
+								}
+								for j := range vector {
+									value := uint32(0)
+									for k := 0; k < 4; k++ {
+										value <<= 8
+										value |= uint32(buffer[j*4+3-k])
+									}
+									vector[j] = math.Float32frombits(value)
+								}
+								a, s := CS(vector[:], current[:]), buffer[len(buffer)-1]
+								/*if a > max {
+									max, symbol = a, s
+								}*/
+								histogram[s] += a
+								count += a
 							}
 						}
 					}
 				}
+				for i, c := range histogram {
+					histogram[i] = c / count
+				}
+				sum, selected := float32(0.0), rng.Float32()
+				for i, c := range histogram {
+					sum += c
+					if selected < sum {
+						symbol = byte(i)
+						sample.Sample += fmt.Sprintf("%c", reverse[byte(i)])
+						sample.Probability += c
+						break
+					}
+				}
+				//fmt.Printf("%c %d\n", reverse[symbol], reverse[symbol])
+				//txt = append(txt, reverse[symbol])
+				m.Add(symbol)
 			}
-			fmt.Printf("%c %d\n", reverse[symbol], reverse[symbol])
-			txt = append(txt, reverse[symbol])
-			m.Add(symbol)
+			samples = append(samples, sample)
 		}
-		fmt.Println(string(txt))
+
+		sort.Slice(samples, func(i, j int) bool {
+			return samples[i].Probability < samples[j].Probability
+		})
+		for _, sample := range samples {
+			fmt.Println("_______________________________________________________________")
+			fmt.Println(sample.Probability)
+			fmt.Println(sample.Sample)
+		}
 		return
 	}
 }
