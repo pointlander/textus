@@ -303,3 +303,70 @@ func (m Mixer) Mix() []float32 {
 	}
 	return SelfAttention(x)
 }
+
+// Basic mixes several histograms together
+type Basic struct {
+	Markov     Markov
+	Histograms []Histogram
+	Length     int
+}
+
+// NewBasic makes a new mixer
+func NewBasic(length int) *Basic {
+	histograms := make([]Histogram, Size)
+	histograms[0] = NewHistogram(1, length)
+	histograms[1] = NewHistogram(2, length)
+	histograms[2] = NewHistogram(4, length)
+	histograms[3] = NewHistogram(8, length)
+	histograms[4] = NewHistogram(16, length)
+	histograms[5] = NewHistogram(32, length)
+	histograms[6] = NewHistogram(64, length)
+	histograms[7] = NewHistogram(128, length)
+	return &Basic{
+		Histograms: histograms,
+		Length:     length,
+	}
+}
+
+func (b Basic) Copy() Mix {
+	histograms := make([]Histogram, Size)
+	for i := range b.Histograms {
+		histograms[i] = b.Histograms[i]
+		histograms[i].Vector = make([]byte, len(b.Histograms[i].Vector))
+		copy(histograms[i].Vector, b.Histograms[i].Vector)
+	}
+	return &Mixer{
+		Markov:     b.Markov,
+		Histograms: histograms,
+	}
+}
+
+// Add adds a symbol to a mixer
+func (b *Basic) Add(s byte) {
+	for i := range b.Histograms {
+		b.Histograms[i].Add(s)
+	}
+	for k := Order; k > 0; k-- {
+		b.Markov[k] = b.Markov[k-1]
+	}
+	b.Markov[0] = s
+}
+
+// Mix mixes the histograms outputting a matrix
+func (b Basic) Mix() []float32 {
+	x := NewMatrix(b.Length, Size)
+	for i := range b.Histograms {
+		sum := float32(0.0)
+		for _, v := range b.Histograms[i].Vector {
+			sum += float32(v)
+		}
+		for _, v := range b.Histograms[i].Vector {
+			if sum == 0.0 {
+				x.Data = append(x.Data, 0.0)
+				continue
+			}
+			x.Data = append(x.Data, float32(v)/sum)
+		}
+	}
+	return SelfAttention(x)
+}
