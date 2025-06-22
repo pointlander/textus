@@ -148,7 +148,7 @@ func main() {
 	}
 	if *FlagBuild {
 		//model := make(map[Context][]Vector)
-		m := NewFiltered()
+		m := NewBasic(256)
 		m.Add(0)
 		buffer32, buffer8 := make([]byte, 4), make([]byte, 1)
 		for _, v := range string(data) {
@@ -212,7 +212,7 @@ func main() {
 		samples := []Sample{}
 		fmt.Println(*FlagPrompt)
 		for range 33 {
-			m := NewFiltered()
+			m := NewBasic(256)
 			txt := []rune(*FlagPrompt)
 			for _, v := range txt {
 				m.Add(forward[v])
